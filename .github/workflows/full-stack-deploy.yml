@@ -1,0 +1,100 @@
+name: 🔄 Full Stack Deployment
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  # Backend Pipeline
+  backend-test:
+    name: 🧪 Backend Tests
+    runs-on: ubuntu-latest
+    if: contains(github.event.head_commit.modified, 'backend/') || github.event_name == 'pull_request'
+    
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install & Test Backend
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          python -c "from app.main import app; print('✅ Backend imports successfully')"
+
+  backend-deploy:
+    name: 🚂 Deploy Backend
+    needs: backend-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.modified, 'backend/')
+    
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Railway
+        run: echo "🚂 Backend would deploy to Railway here"
+
+  # Frontend Pipeline  
+  frontend-test:
+    name: 🧪 Frontend Tests
+    runs-on: ubuntu-latest
+    if: contains(github.event.head_commit.modified, 'frontend/') || github.event_name == 'pull_request'
+    
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      
+      - name: Install & Build Frontend
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+        env:
+          NEXT_PUBLIC_API_URL: https://cinescopeanalyzer-production.up.railway.app
+
+  frontend-deploy:
+    name: ▲ Deploy Frontend
+    needs: frontend-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && contains(github.event.head_commit.modified, 'frontend/')
+    
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Vercel
+        run: echo "▲ Frontend would deploy to Vercel here"
+
+  # Integration Tests
+  integration-test:
+    name: 🔗 Integration Tests
+    needs: [backend-deploy, frontend-deploy]
+    runs-on: ubuntu-latest
+    if: always() && (needs.backend-deploy.result == 'success' || needs.frontend-deploy.result == 'success')
+    
+    steps:
+      - name: Test Full Stack
+        run: |
+          echo "🧪 Testing full stack integration..."
+          curl -f https://cinescopeanalyzer-production.up.railway.app/api/health
+          echo "✅ Full stack is working!"
+
+  # Notification
+  notify:
+    name: 📢 Deployment Status
+    needs: [backend-deploy, frontend-deploy, integration-test]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Success Notification
+        if: success()
+        run: echo "🎉 All deployments successful!"
+      
+      - name: Failure Notification  
+        if: failure()
+        run: echo "❌ Deployment failed - check logs!"

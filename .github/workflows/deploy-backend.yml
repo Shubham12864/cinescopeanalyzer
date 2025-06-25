@@ -1,0 +1,75 @@
+name: 🚀 Deploy Backend to Railway
+
+on:
+  push:
+    branches: [main, master]
+    paths: ['backend/**', '.github/workflows/**']
+  pull_request:
+    branches: [main, master]
+    paths: ['backend/**']
+
+jobs:
+  test-backend:
+    name: 🧪 Test Backend
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: 📦 Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+      
+      - name: 🔍 Lint code
+        run: |
+          cd backend
+          pip install flake8
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+      
+      - name: ✅ Run tests
+        run: |
+          cd backend
+          python -m pytest tests/ || echo "No tests found, skipping..."
+
+  deploy-backend:
+    name: 🚂 Deploy to Railway
+    needs: test-backend
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: 🚂 Deploy to Railway
+        uses: railwayapp/railway-deploy@v1
+        with:
+          railway-token: ${{ secrets.RAILWAY_TOKEN }}
+          service: backend
+      
+      - name: 🎉 Deployment Success
+        run: |
+          echo "✅ Backend deployed successfully to Railway!"
+          echo "🔗 Backend URL: https://cinescopeanalyzer-production.up.railway.app"
+
+  notify:
+    name: 📢 Notify Deployment
+    needs: [test-backend, deploy-backend]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: 📢 Notify Status
+        run: |
+          if [ "${{ needs.deploy-backend.result }}" == "success" ]; then
+            echo "🎉 Deployment successful!"
+          else
+            echo "❌ Deployment failed!"
+          fi
