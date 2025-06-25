@@ -529,9 +529,9 @@ export default function MovieReviewsPage() {
                     
                     <div className="text-center p-4 bg-gray-800/50 rounded-lg">
                       <div className="text-2xl font-bold text-purple-400 mb-2">
-                        {reddit_analysis.raw_data_summary?.total_unique_users || 'N/A'}
+                        {reddit_analysis.collection_summary.date_range?.span_days || 'N/A'}
                       </div>
-                      <div className="text-sm text-gray-400">Unique Users</div>
+                      <div className="text-sm text-gray-400">Days Analyzed</div>
                     </div>
                   </div>
 
@@ -645,13 +645,13 @@ export default function MovieReviewsPage() {
                       <div>
                         <span className="text-gray-400">Total Keywords:</span>
                         <div className="font-semibold">
-                          {reddit_analysis.content_analysis.keyword_analysis.total_unique_keywords}
+                          {reddit_analysis.content_analysis.keyword_analysis.top_keywords?.length || 0}
                         </div>
                       </div>
                       <div>
-                        <span className="text-gray-400">Keyword Diversity:</span>
+                        <span className="text-gray-400">Top Keywords:</span>
                         <div className="font-semibold">
-                          {(reddit_analysis.content_analysis.keyword_analysis.keyword_diversity * 100).toFixed(1)}%
+                          {reddit_analysis.content_analysis.keyword_analysis.top_keywords?.[0]?.[0] || 'N/A'}
                         </div>
                       </div>
                     </div>
