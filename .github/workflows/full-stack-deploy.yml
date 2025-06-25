@@ -5,6 +5,18 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+  workflow_dispatch:  # Allows manual triggering
+    inputs:
+      deploy_backend:
+        description: 'Deploy Backend'
+        required: false
+        default: 'true'
+        type: boolean
+      deploy_frontend:
+        description: 'Deploy Frontend'
+        required: false
+        default: 'true'
+        type: boolean
 
 jobs:
   # Backend Pipeline
