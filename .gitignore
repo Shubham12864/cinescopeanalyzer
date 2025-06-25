@@ -5,6 +5,14 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Test and debug files
+*test*
+*debug*
+*temp*
+*tmp*
+*backup*
+*.bak
+
 # Environment variables
 .env
 .env.local

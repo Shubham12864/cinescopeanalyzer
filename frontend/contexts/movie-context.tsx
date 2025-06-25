@@ -27,6 +27,7 @@ interface MovieContextType {
   setFilters: (filters: SearchFilters) => void
   refreshMovies: () => Promise<void>
   searchMoviesHandler: (query: string) => Promise<void>
+  clearSearch: () => Promise<void>
   getMovieById: (id: string) => Promise<Movie | null>
   analyzeMovie: (movieId: string) => Promise<void>
   clearError: () => void
@@ -183,10 +184,21 @@ export function MovieProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false)
     }
   }, [isBackendConnected, loadMockData])
+  const clearSearch = useCallback(async () => {
+    setSearchQuery('')
+    setError(null)
+    await refreshMovies()
+  }, [refreshMovies])
+
   const searchMoviesHandler = useCallback(async (query: string) => {
     console.log(`🔍 Search triggered for: "${query}"`)
+    
+    // Always set the search query to trigger UI update
+    setSearchQuery(query)
+    
     if (!query.trim()) {
       console.log('🔄 Empty query, refreshing movies')
+      setSearchQuery('') // Clear search query for empty searches
       await refreshMovies()
       return
     }
@@ -288,6 +300,7 @@ export function MovieProvider({ children }: { children: React.ReactNode }) {
     setFilters,
     refreshMovies,
     searchMoviesHandler,
+    clearSearch,
     getMovieById,
     analyzeMovie,
     clearError,

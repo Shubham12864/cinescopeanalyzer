@@ -33,7 +33,7 @@ const addToSearchHistory = (query: string) => {
 }
 
 export function MovieGrid() {
-  const { movies, isLoading, searchQuery, error } = useMovieContext()
+  const { movies, isLoading, searchQuery, error, clearSearch } = useMovieContext()
   const [trendingMovies, setTrendingMovies] = useState<Movie[]>([])
   const [popularMovies, setPopularMovies] = useState<Movie[]>([])
   const [topRatedMovies, setTopRatedMovies] = useState<Movie[]>([])
@@ -161,9 +161,19 @@ export function MovieGrid() {
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
       <div className="px-4 lg:px-8 mb-8">
-        <h2 className="text-3xl font-bold font-poppins text-white mb-2">Search Results for "{searchQuery}"</h2>
-        <div className="text-gray-400">
-          {movies.length} result{movies.length !== 1 ? "s" : ""} found
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-3xl font-bold font-poppins text-white mb-2">Search Results for "{searchQuery}"</h2>
+            <div className="text-gray-400">
+              {movies.length} result{movies.length !== 1 ? "s" : ""} found
+            </div>
+          </div>
+          <button
+            onClick={clearSearch}
+            className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition-colors"
+          >
+            ← Back to Home
+          </button>
         </div>
       </div>      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-8 px-6 lg:px-12 max-w-screen-2xl mx-auto">
         {movies.map((movie, index) => (

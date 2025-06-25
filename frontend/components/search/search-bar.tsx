@@ -6,7 +6,7 @@ import { useMovieContext } from '@/contexts/movie-context'
 import { Button } from '@/components/ui/button'
 
 export function SearchBar() {
-  const { searchQuery, setSearchQuery, searchMoviesHandler, isLoading } = useMovieContext()
+  const { searchQuery, setSearchQuery, searchMoviesHandler, clearSearch, isLoading } = useMovieContext()
   const [inputValue, setInputValue] = useState(searchQuery)
 
   useEffect(() => {
@@ -28,7 +28,7 @@ export function SearchBar() {
 
   const handleClear = () => {
     setInputValue('')
-    setSearchQuery('')
+    clearSearch()
   }
 
   const handleSubmit = (e: React.FormEvent) => {
