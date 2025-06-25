@@ -1,0 +1,53 @@
+# Core FastAPI and server
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+python-multipart==0.0.6
+python-dotenv==1.0.0
+
+# HTTP and API clients
+requests==2.31.0
+httpx==0.25.2
+aiohttp==3.9.1
+aiofiles==23.2.1
+
+# Database and caching
+motor==3.3.2
+pymongo==4.6.1
+azure-cosmos==4.5.1
+azure-identity==1.15.0
+
+# Image and media processing
+cloudinary==1.36.0
+Pillow==10.1.0
+
+# Web scraping
+beautifulsoup4==4.12.2
+selenium==4.21.0
+webdriver-manager==4.0.1
+lxml==4.9.3
+fake-useragent==1.4.0
+undetected-chromedriver==3.5.4
+cloudscraper==1.2.71
+scrapy==2.11.0
+
+# Data processing
+pandas==2.1.4
+numpy==1.26.4
+plotly==5.17.0
+
+# Text processing and sentiment analysis
+vaderSentiment==3.3.2
+textblob==0.17.1
+nltk==3.8.1
+thefuzz==0.20.0
+
+# Reddit API
+praw==7.7.1
+
+# Authentication and security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# CORS middleware
+python-cors==1.0.0

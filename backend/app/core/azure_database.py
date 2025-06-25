@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class AzureDatabaseManager:
     def __init__(self):
         self.connection_string = os.getenv("MONGODB_URI")
-        self.database_type = os.getenv("DATABASE_TYPE", "atlas")  # "cosmosdb" or "atlas"
+        self.database_type = os.getenv("DATABASE_TYPE", "azure_cosmos")  # "azure_cosmos" or "atlas"
         self.db_name = os.getenv("MONGODB_DB_NAME", "cinescope")
         self.client: Optional[AsyncIOMotorClient] = None
         self.db = None
@@ -27,7 +27,7 @@ class AzureDatabaseManager:
                 raise ValueError("MONGODB_URI environment variable not set")
             
             # Configure connection options based on database type
-            if self.database_type == "cosmosdb":
+            if self.database_type == "azure_cosmos":
                 # Azure Cosmos DB specific settings
                 self.client = AsyncIOMotorClient(
                     self.connection_string,
@@ -74,7 +74,9 @@ class AzureDatabaseManager:
                 # Create indexes based on collection type
                 if collection_name == "movies":
                     await collection.create_index([("id", 1)], unique=True)
-                    await collection.create_index([("title", "text"), ("plot", "text")])
+                    # Note: Text search indexes not supported in Cosmos DB
+                    # await collection.create_index([("title", "text"), ("plot", "text")])
+                    await collection.create_index([("title", 1)])
                     await collection.create_index([("year", 1)])
                     await collection.create_index([("rating", -1)])
                     
@@ -97,7 +99,7 @@ class AzureDatabaseManager:
     
     async def get_collection(self, collection_name: str):
         """Get a specific collection"""
-        if not self.db:
+        if self.db is None:
             await self.connect()
         return self.db[collection_name]
     
@@ -112,7 +114,7 @@ db_manager = AzureDatabaseManager()
 
 async def get_database():
     """Get database instance"""
-    if not db_manager.client:
+    if db_manager.client is None:
         await db_manager.connect()
     return db_manager.db
 

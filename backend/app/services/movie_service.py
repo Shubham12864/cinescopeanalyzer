@@ -6,16 +6,20 @@ from datetime import datetime
 
 from ..models.movie import Movie, Review, AnalyticsData, SentimentData, RatingDistributionData, MovieSummary
 from ..core.api_manager import APIManager
+from ..core.azure_database import get_movies_collection, get_cache_collection
 from .comprehensive_movie_service_working import ComprehensiveMovieService
 from ..scraper.enhanced_movie_scraper import EnhancedMovieDescriptionScraper
 
 class MovieService:
     def __init__(self):
-        self.movies_db = []  # In-memory storage for demo
         self.api_manager = APIManager()  # Use comprehensive API manager
         self.comprehensive_service = ComprehensiveMovieService()  # Enhanced service
         self.description_scraper = EnhancedMovieDescriptionScraper()  # Enhanced descriptions
         self.logger = logging.getLogger(__name__)  # Add logger
+        # Database collections (will be initialized when needed)
+        self.movies_collection = None
+        self.cache_collection = None
+        self.movies_db = []  # Initialize movies_db
         self._init_demo_data()
     
     def _init_demo_data(self):
@@ -162,7 +166,16 @@ class MovieService:
                 self.logger.info(f"⚡ Cache HIT - returning {len(cached_result)} results instantly")
                 return cached_result[:limit]
             
-            # STEP 2: Use OMDB API directly for speed (bypass slower API manager layers)
+            # STEP 2: Search in database first (faster than API calls)
+            db_results = await self._search_movies_in_db(query, limit)
+            if db_results:
+                movies = [self._convert_dict_to_movie(data) for data in db_results]
+                self.logger.info(f"💾 Database HIT - returning {len(movies)} results")
+                # Cache the results for next time
+                await self._cache_results(cache_key, movies)
+                return movies[:limit]
+            
+            # STEP 3: Use OMDB API directly for speed (bypass slower API manager layers)
             omdb_results = await self._search_omdb_direct(query, limit)
             if omdb_results:
                 self.logger.info(f"✅ OMDB returned {len(omdb_results)} results in <5s")
@@ -197,29 +210,30 @@ class MovieService:
     
     async def get_movie_by_id(self, movie_id: str) -> Optional[Movie]:
         """Get a specific movie by ID with enhanced descriptions"""
-        # First check local database
-        for movie in self.movies_db:
-            if movie.id == movie_id:
-                self.logger.info(f"✅ Found movie in local DB: {movie.title}")
-                
-                # Check if we need to enhance the description
-                if not hasattr(movie, 'enhanced_data') or not movie.enhanced_data:
-                    self.logger.info(f"🚀 Enhancing description for: {movie.title}")
-                    try:
-                        enhanced_data = await self.description_scraper.get_comprehensive_description(
-                            movie.title, movie.year, movie.imdbId or ""
-                        )
-                        movie.enhanced_data = enhanced_data
-                        # Update plot with enhanced description
-                        if enhanced_data.get('full_description'):
-                            movie.plot = enhanced_data['full_description']
-                        self.logger.info(f"✅ Enhanced description added for: {movie.title}")
-                    except Exception as e:
-                        self.logger.warning(f"Failed to enhance description for {movie.title}: {e}")
-                        if not hasattr(movie, 'enhanced_data'):
-                            movie.enhanced_data = {}
-                
-                return movie
+        # First check database
+        db_movie = await self._get_movie_from_db(movie_id)
+        if db_movie:
+            movie = self._convert_dict_to_movie(db_movie)
+            self.logger.info(f"✅ Found movie in database: {movie.title}")
+            
+            # Check if we need to enhance the description
+            if not hasattr(movie, 'enhanced_data') or not movie.enhanced_data:
+                self.logger.info(f"🚀 Enhancing description for: {movie.title}")
+                try:
+                    enhanced_data = await self.description_scraper.get_comprehensive_description(
+                        movie.title, movie.year, movie.imdbId or ""
+                    )
+                    movie.enhanced_data = enhanced_data
+                    # Update plot with enhanced description
+                    if enhanced_data.get('full_description'):
+                        movie.plot = enhanced_data['full_description']
+                    self.logger.info(f"✅ Enhanced description added for: {movie.title}")
+                except Exception as e:
+                    self.logger.warning(f"Failed to enhance description for {movie.title}: {e}")
+                    if not hasattr(movie, 'enhanced_data'):
+                        movie.enhanced_data = {}
+            
+            return movie
         
         # If not found locally, try to fetch from APIs
         self.logger.info(f"🔍 Movie {movie_id} not in local DB, trying APIs...")
@@ -1113,3 +1127,93 @@ class MovieService:
         except Exception as e:
             self.logger.warning(f"Error generating real poster path: {e}")
             return "https://via.placeholder.com/300x450/2c3e50/ecf0f1?text=Movie%20Poster"
+    
+    async def _ensure_database_connection(self):
+        """Ensure database collections are initialized"""
+        if self.movies_collection is None:
+            self.movies_collection = await get_movies_collection()
+            self.logger.info("🔗 Connected to movies collection")
+        
+        if self.cache_collection is None:
+            self.cache_collection = await get_cache_collection()
+            self.logger.info("🔗 Connected to cache collection")
+    
+    async def _save_movie_to_db(self, movie_data: dict):
+        """Save movie data to database"""
+        try:
+            await self._ensure_database_connection()
+            
+            # Check if movie already exists
+            existing = await self.movies_collection.find_one({"id": movie_data.get("id")})
+            if existing:
+                # Update existing movie
+                await self.movies_collection.update_one(
+                    {"id": movie_data.get("id")},
+                    {"$set": {
+                        **movie_data,
+                        "last_updated": datetime.utcnow(),
+                        "source": movie_data.get("source", "api")
+                    }}
+                )
+                self.logger.info(f"📝 Updated movie: {movie_data.get('title')}")
+            else:
+                # Insert new movie
+                await self.movies_collection.insert_one({
+                    **movie_data,
+                    "created_at": datetime.utcnow(),
+                    "last_updated": datetime.utcnow(),
+                    "source": movie_data.get("source", "api")
+                })
+                self.logger.info(f"💾 Saved new movie: {movie_data.get('title')}")
+        except Exception as e:
+            self.logger.error(f"❌ Failed to save movie to database: {e}")
+    
+    async def _get_movie_from_db(self, movie_id: str) -> Optional[dict]:
+        """Get movie from database by ID"""
+        try:
+            await self._ensure_database_connection()
+            movie = await self.movies_collection.find_one({"id": movie_id})
+            if movie:
+                self.logger.info(f"📖 Retrieved movie from DB: {movie.get('title')}")
+                return movie
+        except Exception as e:
+            self.logger.error(f"❌ Failed to get movie from database: {e}")
+        return None
+    
+    async def _search_movies_in_db(self, query: str, limit: int = 10) -> List[dict]:
+        """Search movies in database"""
+        try:
+            await self._ensure_database_connection()
+            
+            # Search by title (case-insensitive)
+            movies = await self.movies_collection.find({
+                "title": {"$regex": query, "$options": "i"}
+            }).limit(limit).to_list(length=limit)
+            
+            if movies:
+                self.logger.info(f"🔍 Found {len(movies)} movies in DB for query: {query}")
+                return movies
+        except Exception as e:
+            self.logger.error(f"❌ Failed to search movies in database: {e}")
+        return []
+    
+    async def _save_search_results_to_db(self, movies: List[Movie], query: str):
+        """Save search results to database for future queries"""
+        try:
+            for movie in movies:
+                # Convert Movie object to dict for storage
+                movie_data = {
+                    "id": movie.id,
+                    "title": movie.title,
+                    "year": movie.year,
+                    "rating": movie.rating,
+                    "genre": movie.genre,
+                    "plot": movie.plot,
+                    "poster": movie.poster,
+                    "director": movie.director,
+                    "cast": movie.cast,
+                    "search_query": query.lower(),  # Track what query found this movie
+                }
+                await self._save_movie_to_db(movie_data)
+        except Exception as e:
+            self.logger.error(f"❌ Failed to save search results to DB: {e}")
