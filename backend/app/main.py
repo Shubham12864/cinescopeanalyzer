@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 # Import API routes
 from .api.routes.movies import router as movies_router
 from .api.routes.images import router as images_router
+from .api.routes.analytics import router as analytics_router
 # Temporarily disabled to avoid pandas/numpy compatibility issues
 # from .api.routes.enhanced_analysis_routes import router as enhanced_analysis_router
 
@@ -44,6 +45,7 @@ async def options_handler(path: str):
 # Include API routes
 app.include_router(movies_router)
 app.include_router(images_router)
+app.include_router(analytics_router)
 # Temporarily disabled to avoid pandas/numpy compatibility issues
 # app.include_router(enhanced_analysis_router)
 

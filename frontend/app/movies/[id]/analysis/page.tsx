@@ -32,33 +32,45 @@ export default function MovieAnalysisPage() {
       setIsLoading(true)
       setError(null)
       
-      // Load movie details
+      console.log('🔄 Loading analysis for movie:', id)
+      
+      // Load movie details first
       const movieData = await getMovieById(id)
       if (movieData) {
         setMovie(movieData)
+        console.log('✅ Movie data loaded:', movieData.title)
       }
 
-      // Load analytics if backend is connected
+      // Try to load analytics from backend
       if (isBackendConnected) {
         try {
+          console.log('🔄 Fetching analysis from backend...')
           const analyticsData = await movieApi.getMovieAnalysis(id)
+          console.log('✅ Analysis data received:', analyticsData)
           setAnalytics(analyticsData)
+          return // Success, exit early
         } catch (err) {
-          // If movie-specific analysis fails, try general analytics
+          console.error('❌ Backend analysis failed:', err)
+          // Try general analytics as fallback
           try {
+            console.log('🔄 Trying general analytics as fallback...')
             const generalAnalytics = await movieApi.getAnalytics()
+            console.log('✅ General analytics received:', generalAnalytics)
             setAnalytics(generalAnalytics)
+            return // Success with fallback
           } catch (generalErr) {
-            console.error('Failed to load analytics:', generalErr)
-            // Create mock analytics based on movie data
-            createMockAnalytics(movieData)
+            console.error('❌ General analytics also failed:', generalErr)
+            // Fall through to create mock analytics
           }
         }
-      } else {
-        // Create mock analytics when backend is not connected
-        createMockAnalytics(movieData)
       }
+      
+      // Create mock analytics when backend fails or is not connected
+      console.log('🔄 Creating mock analytics...')
+      createMockAnalytics(movieData)
+      
     } catch (error) {
+      console.error('❌ Load analysis error:', error)
       setError(error instanceof Error ? error.message : 'Failed to load analysis')
     } finally {
       setIsLoading(false)
