@@ -14,16 +14,18 @@ try:
     from ..scraper.metacritic_scraper import MetacriticScraper
     SCRAPERS_AVAILABLE = True
 except ImportError as e:
-    logging.warning(f"Scrapers not available: {e}")
+    # Handle missing scraper dependencies gracefully
     SCRAPERS_AVAILABLE = False
+    logging.warning(f"Web scrapers not available: {e}")
 
 # Import Scrapy search service
 try:
     from ..services.scrapy_search_service import ScrapySearchService
     SCRAPY_SEARCH_AVAILABLE = True
 except ImportError as e:
-    logging.warning(f"Scrapy search service not available: {e}")
+    # Handle missing scrapy dependencies gracefully
     SCRAPY_SEARCH_AVAILABLE = False
+    logging.warning(f"Scrapy search service not available: {e}")
 
 load_dotenv()
 

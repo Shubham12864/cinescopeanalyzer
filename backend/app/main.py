@@ -24,9 +24,22 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Allow all origins for development
     allow_credentials=False,
-    allow_methods=["*"],  # Allow all methods
-    allow_headers=["*"],  # Allow all headers
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"],
+    allow_headers=["*"],
+    expose_headers=["*"]
 )
+
+# Add explicit OPTIONS handler for preflight requests
+@app.options("/{path:path}")
+async def options_handler(path: str):
+    return {
+        "message": "OK",
+        "headers": {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH",
+            "Access-Control-Allow-Headers": "*"
+        }
+    }
 
 # Include API routes
 app.include_router(movies_router)
@@ -73,7 +86,13 @@ async def health_check():
 
 @app.get("/api/health")
 async def api_health_check():
-    """API health check endpoint"""
+    """API health check endpoint with CORS headers"""
+    from fastapi import Response
+    response = Response(content='{"status":"healthy","message":"CineScope API is running","version":"1.0.0"}')
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    response.headers["Content-Type"] = "application/json"
     return {"status": "healthy", "message": "CineScope API is running", "version": "1.0.0"}
 
 @app.get("/api/analytics")
