@@ -1,4 +1,11 @@
-import API_CONFIG from '../config/api';
+// API configuration for frontend
+export const API_CONFIG = {
+  BASE_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
+  DEFAULT_HEADERS: {
+    'Content-Type': 'application/json',
+  },
+  TIMEOUT: 10000,
+};
 
 // Generic API call function
 export const apiCall = async (endpoint, options = {}) => {
@@ -18,13 +25,12 @@ export const apiCall = async (endpoint, options = {}) => {
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data.detail || `HTTP error! status: ${response.status}`);
+      throw new Error(data.message || 'API Error');
     }
 
-    console.log('API call successful:', data);
     return data;
   } catch (error) {
-    console.error(`API call failed for ${endpoint}:`, error);
+    console.error('API call failed:', error);
     throw error;
   }
 };
@@ -32,7 +38,7 @@ export const apiCall = async (endpoint, options = {}) => {
 // Health check function
 export const checkBackendHealth = async () => {
   try {
-    const response = await fetch('http://localhost:8000/health');
+    const response = await fetch(`${API_CONFIG.BASE_URL}/health`);
     const data = await response.json();
     return {
       isHealthy: response.ok,

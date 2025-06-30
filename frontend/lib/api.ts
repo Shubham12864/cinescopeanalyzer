@@ -78,11 +78,42 @@ export const movieApi = {
   },
   async getRecentMovies() {
     return fetchApi<Movie[]>('/api/movies/recent')
-  },  async getTrendingMovies() {
+  },
+  async getTrendingMovies() {
     return fetchApi<Movie[]>('/api/movies/trending')
   },
   async getSuggestions() {
     return fetchApi<Movie[]>('/api/movies/suggestions')
+  },
+  async getMovieReviews(movieId: string) {
+    return fetchApi<Review[]>(`/api/movies/${movieId}/reviews`)
+  },
+  async addMovieReview(movieId: string, reviewData: {
+    author: string
+    content: string
+    rating: number
+    sentiment?: string
+  }) {
+    return fetchApi<{message: string, review: Review}>(`/api/movies/${movieId}/reviews`, {
+      method: 'POST',
+      body: JSON.stringify(reviewData)
+    })
+  },
+  async updateMovieReview(movieId: string, reviewId: string, reviewData: {
+    author?: string
+    content?: string
+    rating?: number
+    sentiment?: string
+  }) {
+    return fetchApi<{message: string, review: Review}>(`/api/movies/${movieId}/reviews/${reviewId}`, {
+      method: 'PUT',
+      body: JSON.stringify(reviewData)
+    })
+  },
+  async deleteMovieReview(movieId: string, reviewId: string) {
+    return fetchApi<{message: string}>(`/api/movies/${movieId}/reviews/${reviewId}`, {
+      method: 'DELETE'
+    })
   }
 }
 

@@ -86,16 +86,11 @@ async def health_check():
         }
     }
 
+# Alias for backwards compatibility
 @app.get("/api/health")
 async def api_health_check():
-    """API health check endpoint with CORS headers"""
-    from fastapi import Response
-    response = Response(content='{"status":"healthy","message":"CineScope API is running","version":"1.0.0"}')
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "*"
-    response.headers["Content-Type"] = "application/json"
-    return {"status": "healthy", "message": "CineScope API is running", "version": "1.0.0"}
+    """API health check endpoint - alias for /health"""
+    return await health_check()
 
 @app.get("/api/analytics")
 async def get_analytics():

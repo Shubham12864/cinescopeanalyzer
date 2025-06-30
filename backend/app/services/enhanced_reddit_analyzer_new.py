@@ -24,13 +24,22 @@ class EnhancedRedditAnalyzer:
         self.reddit_client_secret = os.getenv('REDDIT_CLIENT_SECRET')
         self.reddit_user_agent = os.getenv('REDDIT_USER_AGENT', 'CineScopeAnalyzer/2.0 (Enhanced Movie Analysis)')
         
+        # Check if Reddit credentials are available and valid
+        self.reddit_available = bool(
+            self.reddit_client_id and 
+            self.reddit_client_secret and 
+            self.reddit_client_id != 'your_reddit_client_id_here' and
+            self.reddit_client_secret != 'your_reddit_client_secret_here'
+        )
+        
+        if not self.reddit_available:
+            print("⚠️  Reddit API credentials not configured. Reddit analysis will be disabled.")
+            print("   Set REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET to enable Reddit analysis.")
+            self.reddit = None
+            return
+        
         print(f"🔍 Debug - Client ID: {self.reddit_client_id}")
         print(f"🔍 Debug - Client Secret: {self.reddit_client_secret[:10]}..." if self.reddit_client_secret else "None")
-        
-        # Check if Reddit credentials are available
-        self.reddit_available = bool(self.reddit_client_id and self.reddit_client_secret and 
-                                   self.reddit_client_id != 'your_reddit_client_id_here')
-        
         print(f"🔍 Debug - Reddit available: {self.reddit_available}")
         
         if self.reddit_available:
@@ -38,8 +47,7 @@ class EnhancedRedditAnalyzer:
                 self.reddit = praw.Reddit(
                     client_id=self.reddit_client_id,
                     client_secret=self.reddit_client_secret,
-                    user_agent=self.reddit_user_agent,
-                    read_only=True
+                    user_agent=self.reddit_user_agent
                 )
                 # Test the connection with a simple subreddit access
                 test_subreddit = self.reddit.subreddit('movies')
@@ -67,7 +75,8 @@ class EnhancedRedditAnalyzer:
         """
         
         # If Reddit API is not available, return demo data
-        if not self.reddit_available:
+        if not self.reddit_available or not self.reddit:
+            print(f"⚠️ Reddit API not available, returning demo analysis for '{movie_title}'")
             return self._generate_demo_analysis(movie_title, imdb_id, year)
         
         # For real Reddit API implementation
@@ -97,6 +106,8 @@ class EnhancedRedditAnalyzer:
                                 'selftext': getattr(post, 'selftext', ''),
                                 'score': getattr(post, 'score', 0),
                                 'num_comments': getattr(post, 'num_comments', 0),
+                                'author': str(post.author) if hasattr(post, 'author') and post.author else '[deleted]',
+                                'upvote_ratio': getattr(post, 'upvote_ratio', 0.5),
                                 'created_utc': datetime.fromtimestamp(post.created_utc),
                                 'url': post.url,
                                 'permalink': f"https://reddit.com{post.permalink}",
@@ -114,6 +125,7 @@ class EnhancedRedditAnalyzer:
             
         except Exception as e:
             print(f"❌ Error in real Reddit analysis: {e}")
+            print(f"🔄 Falling back to demo analysis for '{movie_title}'")
             return self._generate_demo_analysis(movie_title, imdb_id, year)
     
     def _analyze_real_posts(self, movie_title: str, imdb_id: str, year: int, posts: List[Dict]) -> Dict:

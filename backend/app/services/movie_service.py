@@ -210,6 +210,9 @@ class MovieService:
     
     async def get_movie_by_id(self, movie_id: str) -> Optional[Movie]:
         """Get a specific movie by ID with enhanced descriptions"""
+        self.logger.info(f"🔍 Looking for movie with ID: {movie_id}")
+        self.logger.info(f"📚 Local movies_db has {len(self.movies_db)} movies")
+        
         # First check database
         db_movie = await self._get_movie_from_db(movie_id)
         if db_movie:
@@ -234,6 +237,16 @@ class MovieService:
                         movie.enhanced_data = {}
             
             return movie
+        
+        # If not found in database, check the local movies_db list
+        self.logger.info(f"🔍 Movie {movie_id} not in database, checking local movies list...")
+        for i, movie in enumerate(self.movies_db):
+            self.logger.info(f"Checking movie {i}: ID={movie.id}, Title={movie.title}")
+            if str(movie.id) == str(movie_id):
+                self.logger.info(f"✅ Found movie in local list: {movie.title}")
+                return movie
+        
+        self.logger.warning(f"❌ Movie {movie_id} not found in local movies_db")
         
         # If not found locally, try to fetch from APIs
         self.logger.info(f"🔍 Movie {movie_id} not in local DB, trying APIs...")
@@ -1217,3 +1230,35 @@ class MovieService:
                 await self._save_movie_to_db(movie_data)
         except Exception as e:
             self.logger.error(f"❌ Failed to save search results to DB: {e}")
+    
+    async def _update_movie_in_db(self, movie: Movie):
+        """Update movie in database"""
+        try:
+            await self._ensure_database_connection()
+            
+            # Convert movie to dict for database storage
+            movie_dict = movie.dict()
+            
+            # Update the movie in the database
+            result = await self.movies_collection.update_one(
+                {"id": movie.id},
+                {"$set": movie_dict},
+                upsert=True  # Create if doesn't exist
+            )
+            
+            if result.modified_count > 0 or result.upserted_id:
+                self.logger.info(f"✅ Updated movie in database: {movie.title}")
+                
+                # Also update the local movies_db list
+                for i, local_movie in enumerate(self.movies_db):
+                    if local_movie.id == movie.id:
+                        self.movies_db[i] = movie
+                        break
+                else:
+                    # If not found in local list, add it
+                    self.movies_db.append(movie)
+                    
+            return True
+        except Exception as e:
+            self.logger.error(f"❌ Failed to update movie in database: {e}")
+            return False

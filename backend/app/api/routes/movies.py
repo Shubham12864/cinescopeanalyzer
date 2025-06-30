@@ -3,12 +3,37 @@ from typing import List, Optional, Dict
 import asyncio
 import logging
 import random
+import traceback
 from datetime import datetime
-from ...models.movie import Movie
+from ...models.movie import Movie, Review, AnalyticsData, SentimentData, RatingDistributionData, MovieSummary
 from ...services.movie_service import MovieService
 from ...services.comprehensive_movie_service_working import ComprehensiveMovieService
 
 router = APIRouter(prefix="/api/movies", tags=["movies"])
+
+# Add a route for the base path without trailing slash
+@router.get("", response_model=List[Movie])
+async def get_movies_no_slash(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    genre: Optional[str] = None,
+    year: Optional[int] = None,
+    sort_by: Optional[str] = Query("rating", regex="^(rating|year|title|reviews)$"),
+    sort_order: Optional[str] = Query("desc", regex="^(asc|desc)$")
+):
+    """Get all movies with optional filtering and pagination (no trailing slash)"""
+    try:
+        movies = await movie_service.get_movies(
+            limit=limit,
+            offset=offset,
+            genre=genre,
+            year=year,
+            sort_by=sort_by,
+            sort_order=sort_order
+        )
+        return movies
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Initialize services
 movie_service = MovieService()
@@ -968,7 +993,6 @@ async def get_movie_analysis(movie_id: str):
         raise
     except Exception as e:
         logger.error(f"❌ Error getting analysis for {movie_id}: {e}")
-        import traceback
         logger.error(f"Full traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=500, 
@@ -1114,6 +1138,122 @@ async def get_movie_reddit_reviews(
             status_code=500, 
             detail=f"Error analyzing Reddit reviews: {str(e)}"
         )
+
+@router.get("/{movie_id}/reviews", response_model=List[Review])
+async def get_movie_reviews(movie_id: str):
+    """Get all reviews for a specific movie"""
+    try:
+        movie = await movie_service.get_movie_by_id(movie_id)
+        if not movie:
+            raise HTTPException(status_code=404, detail="Movie not found")
+        
+        return movie.reviews
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/{movie_id}/reviews")
+async def add_movie_review(movie_id: str, review_data: dict):
+    """Add a new review to a movie"""
+    try:
+        movie = await movie_service.get_movie_by_id(movie_id)
+        if not movie:
+            raise HTTPException(status_code=404, detail="Movie not found")
+        
+        # Create new review with auto-generated ID
+        import uuid
+        new_review = Review(
+            id=f"review_{uuid.uuid4().hex[:8]}",
+            author=review_data.get("author", "Anonymous"),
+            content=review_data.get("content", ""),
+            rating=float(review_data.get("rating", 5.0)),
+            sentiment=review_data.get("sentiment", "neutral"),
+            date=datetime.now().strftime("%Y-%m-%d"),
+            source="user_input",
+            helpful_votes=0,
+            total_votes=0
+        )
+        
+        movie.reviews.append(new_review)
+        await movie_service._update_movie_in_db(movie)
+        
+        return {"message": "Review added successfully", "review": new_review}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/{movie_id}/reviews/{review_id}")
+async def update_movie_review(movie_id: str, review_id: str, review_data: dict):
+    """Update an existing review"""
+    try:
+        movie = await movie_service.get_movie_by_id(movie_id)
+        if not movie:
+            raise HTTPException(status_code=404, detail="Movie not found")
+        
+        # Find the review to update
+        review_to_update = None
+        for review in movie.reviews:
+            if review.id == review_id:
+                review_to_update = review
+                break
+        
+        if not review_to_update:
+            raise HTTPException(status_code=404, detail="Review not found")
+        
+        # Update review fields
+        if "author" in review_data:
+            review_to_update.author = review_data["author"]
+        if "content" in review_data:
+            review_to_update.content = review_data["content"]
+        if "rating" in review_data:
+            review_to_update.rating = float(review_data["rating"])
+        if "sentiment" in review_data:
+            review_to_update.sentiment = review_data["sentiment"]
+        
+        await movie_service._update_movie_in_db(movie)
+        
+        return {"message": "Review updated successfully", "review": review_to_update}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/{movie_id}/reviews/{review_id}")
+async def delete_movie_review(movie_id: str, review_id: str):
+    """Delete a review"""
+    try:
+        movie = await movie_service.get_movie_by_id(movie_id)
+        if not movie:
+            raise HTTPException(status_code=404, detail="Movie not found")
+        
+        # Find and remove the review
+        original_count = len(movie.reviews)
+        movie.reviews = [review for review in movie.reviews if review.id != review_id]
+        
+        if len(movie.reviews) == original_count:
+            raise HTTPException(status_code=404, detail="Review not found")
+        
+        await movie_service._update_movie_in_db(movie)
+        
+        return {"message": "Review deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/debug-movies-list")
+async def debug_movies():
+    """Debug endpoint to check movies_db content"""
+    try:
+        movies_count = len(movie_service.movies_db)
+        movies_info = []
+        for movie in movie_service.movies_db:
+            movies_info.append({
+                "id": movie.id,
+                "title": movie.title,
+                "type": type(movie).__name__
+            })
+        
+        return {
+            "movies_count": movies_count,
+            "movies": movies_info
+        }
+    except Exception as e:
+        return {"error": str(e), "type": type(e).__name__}
 
 def _generate_reddit_summary(reddit_analysis: Dict) -> Dict:
     """Generate a summary of Reddit analysis results"""

@@ -420,93 +420,72 @@ class ComprehensiveMovieAnalysisOrchestrator:
     
     # Placeholder implementations for scraping methods (would be replaced with actual Scrapy integration)
     async def _scrape_imdb_comprehensive(self, movie_title: str, imdb_id: str = None) -> Dict:
-        """Comprehensive IMDB scraping"""
-        # This would use the ComprehensiveMovieSpider
-        return {'placeholder': 'imdb_data', 'source': 'imdb'}
+        raise NotImplementedError('IMDB scraping is not implemented. Please implement or connect Scrapy integration.')
     
     async def _scrape_rotten_tomatoes(self, movie_title: str) -> Dict:
-        """Rotten Tomatoes scraping"""
-        return {'placeholder': 'rt_data', 'source': 'rotten_tomatoes'}
+        raise NotImplementedError('Rotten Tomatoes scraping is not implemented. Please implement or connect Scrapy integration.')
     
     async def _scrape_metacritic(self, movie_title: str) -> Dict:
-        """Metacritic scraping"""
-        return {'placeholder': 'metacritic_data', 'source': 'metacritic'}
+        raise NotImplementedError('Metacritic scraping is not implemented. Please implement or connect Scrapy integration.')
     
     async def _scrape_letterboxd(self, movie_title: str) -> Dict:
-        """Letterboxd scraping"""
-        return {'placeholder': 'letterboxd_data', 'source': 'letterboxd'}
+        raise NotImplementedError('Letterboxd scraping is not implemented. Please implement or connect Scrapy integration.')
     
     async def _scrape_box_office(self, movie_title: str) -> Dict:
-        """Box Office scraping"""
-        return {'placeholder': 'box_office_data', 'source': 'box_office'}
+        raise NotImplementedError('Box Office scraping is not implemented. Please implement or connect Scrapy integration.')
     
     # Placeholder implementations for API methods
     async def _get_omdb_data(self, movie_title: str, imdb_id: str = None, year: int = None) -> Dict:
-        """Get OMDB data"""
         try:
             return await self.omdb_api.get_movie_details(title=movie_title, imdb_id=imdb_id, year=year)
         except Exception as e:
             return {'error': str(e), 'source': 'omdb'}
     
     async def _get_tmdb_data(self, movie_title: str, year: int = None) -> Dict:
-        """Get TMDB data"""
         try:
             return await self.tmdb_api.search_movie(query=movie_title, year=year)
         except Exception as e:
             return {'error': str(e), 'source': 'tmdb'}
     
     async def _get_additional_api_data(self, movie_title: str, imdb_id: str = None) -> Dict:
-        """Get additional API data"""
-        return {'placeholder': 'additional_api_data'}
+        raise NotImplementedError('Additional API data fetching is not implemented.')
     
     # Placeholder implementations for analysis methods
     async def _deep_sentiment_analysis(self, text_data: List[str]) -> Dict:
-        """Deep sentiment analysis"""
-        return {'placeholder': 'deep_sentiment_analysis'}
+        raise NotImplementedError('Deep sentiment analysis is not implemented.')
     
     async def _content_theme_analysis(self, text_data: List[str]) -> Dict:
-        """Content theme analysis"""
-        return {'placeholder': 'content_theme_analysis'}
+        raise NotImplementedError('Content theme analysis is not implemented.')
     
     async def _rating_correlation_analysis(self, results: Dict) -> Dict:
-        """Rating correlation analysis"""
-        return {'placeholder': 'rating_correlation_analysis'}
+        raise NotImplementedError('Rating correlation analysis is not implemented.')
     
     async def _temporal_trend_analysis(self, results: Dict) -> Dict:
-        """Temporal trend analysis"""
-        return {'placeholder': 'temporal_trend_analysis'}
+        raise NotImplementedError('Temporal trend analysis is not implemented.')
     
     async def _audience_segmentation_analysis(self, results: Dict) -> Dict:
-        """Audience segmentation analysis"""
-        return {'placeholder': 'audience_segmentation_analysis'}
+        raise NotImplementedError('Audience segmentation analysis is not implemented.')
     
     def _compare_sentiment_across_platforms(self, results: Dict) -> Dict:
-        """Compare sentiment across different platforms"""
-        return {'placeholder': 'cross_platform_sentiment'}
+        raise NotImplementedError('Cross-platform sentiment analysis is not implemented.')
     
     def _analyze_rating_consensus(self, results: Dict) -> Dict:
-        """Analyze rating consensus"""
-        return {'placeholder': 'rating_consensus'}
+        raise NotImplementedError('Rating consensus analysis is not implemented.')
     
     def _analyze_audience_critic_divide(self, results: Dict) -> Dict:
-        """Analyze audience vs critic divide"""
-        return {'placeholder': 'audience_critic_divide'}
+        raise NotImplementedError('Audience vs critic divide analysis is not implemented.')
     
     def _analyze_discussion_volume(self, results: Dict) -> Dict:
-        """Analyze discussion volume"""
-        return {'placeholder': 'discussion_volume'}
+        raise NotImplementedError('Discussion volume analysis is not implemented.')
     
     def _assess_content_quality(self, results: Dict) -> Dict:
-        """Assess content quality"""
-        return {'placeholder': 'content_quality'}
+        raise NotImplementedError('Content quality assessment is not implemented.')
     
     def _calculate_recommendation_score(self, results: Dict) -> Dict:
-        """Calculate recommendation score"""
-        return {'placeholder': 'recommendation_score'}
+        raise NotImplementedError('Recommendation score calculation is not implemented.')
     
     def _create_detailed_breakdown(self, results: Dict) -> Dict:
-        """Create detailed breakdown"""
-        return {'placeholder': 'detailed_breakdown'}
+        raise NotImplementedError('Detailed breakdown creation is not implemented.')
     
     def _calculate_confidence_metrics(self, results: Dict) -> Dict:
         """Calculate confidence metrics"""
