@@ -1,0 +1,113 @@
+# CineScopeAnalyzer - Enhanced Requirements with Better Dependency Management
+# This file includes all dependencies with fallback options for different environments
+
+# ========================================
+# CORE FRAMEWORK (Required)
+# ========================================
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+python-multipart==0.0.6
+python-dotenv==1.0.0
+
+# ========================================
+# HTTP CLIENTS (Required)
+# ========================================
+requests==2.31.0
+httpx==0.25.2
+aiohttp==3.9.1
+aiofiles==23.2.1
+
+# ========================================
+# DATABASE (Required)
+# ========================================
+motor==3.3.2
+pymongo==4.6.1
+dnspython==2.4.2
+
+# ========================================
+# WEB SCRAPING CORE (Required for basic functionality)
+# ========================================
+beautifulsoup4==4.12.2
+lxml==4.9.4
+requests-html==0.10.0
+
+# ========================================
+# SELENIUM & CHROME AUTOMATION (Optional - Enhanced Features)
+# ========================================
+# Core Selenium
+selenium==4.21.0
+
+# Chrome Driver Management (helps with auto-installation)
+webdriver-manager==4.0.1
+
+# Advanced Chrome automation (better bot detection avoidance)
+undetected-chromedriver==3.5.5
+
+# ========================================
+# SCRAPING ENHANCEMENT TOOLS (Optional)
+# ========================================
+fake-useragent==1.4.0
+cloudscraper==1.2.71
+requests-toolbelt==1.0.0
+
+# ========================================
+# SCRAPY FRAMEWORK (Optional - Advanced Scraping)
+# ========================================
+scrapy==2.11.0
+crochet==2.0.0
+scrapy-rotating-proxies==0.6.2
+
+# ========================================
+# IMAGE PROCESSING & CACHING (Optional)
+# ========================================
+Pillow==10.1.0
+imagehash==4.3.1
+
+# ========================================
+# DATA PROCESSING (Required)
+# ========================================
+pandas==2.1.4
+numpy==1.25.2
+
+# ========================================
+# REDDIT API (Optional - Enhanced Analysis)
+# ========================================
+praw==7.7.1
+prawcore==2.4.0
+
+# ========================================
+# ASYNC & CACHING (Required)
+# ========================================
+redis==5.0.1
+aioredis==2.0.1
+cachetools==5.3.2
+
+# ========================================
+# LOGGING & MONITORING (Required)
+# ========================================
+structlog==23.2.0
+colorlog==6.8.0
+
+# ========================================
+# TESTING & DEVELOPMENT (Optional)
+# ========================================
+pytest==7.4.3
+pytest-asyncio==0.23.2
+pytest-cov==4.1.0
+black==23.11.0
+flake8==6.1.0
+
+# ========================================
+# CORS & SECURITY (Required)
+# ========================================
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.6
+
+# ========================================
+# OTHER UTILITIES (Required)
+# ========================================
+python-dateutil==2.8.2
+pytz==2023.3
+validators==0.22.0

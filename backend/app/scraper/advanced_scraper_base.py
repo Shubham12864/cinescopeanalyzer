@@ -303,14 +303,14 @@ class AdvancedScraperBase:
             return None
     
     def setup_selenium_driver(self, headless: Optional[bool] = None) -> Optional[webdriver.Chrome]:
-        """Setup Selenium WebDriver with FIXED Chrome options"""
+        """Setup Selenium WebDriver with FIXED Chrome options and auto-driver management"""
         if not SELENIUM_AVAILABLE:
             self.logger.error("❌ Selenium not available")
             return None
         
         headless = headless if headless is not None else self.config['headless']
         
-        self.logger.info("🚗 Setting up Chrome WebDriver with compatible options...")
+        self.logger.info("🚗 Setting up Chrome WebDriver with auto-installation...")
         
         try:
             # Use compatible Chrome options
@@ -327,6 +327,8 @@ class AdvancedScraperBase:
             options.add_argument('--disable-web-security')
             options.add_argument('--disable-features=VizDisplayCompositor')
             options.add_argument('--disable-blink-features=AutomationControlled')
+            options.add_argument('--disable-logging')
+            options.add_argument('--disable-extensions')
             
             # Window size
             options.add_argument(f'--window-size={self.config["window_width"]},{self.config["window_height"]}')
@@ -341,12 +343,14 @@ class AdvancedScraperBase:
                 # Use add_experimental_option instead of excludeSwitches
                 prefs = {
                     "profile.managed_default_content_settings.images": 2,
-                    "profile.default_content_setting_values.notifications": 2
+                    "profile.default_content_setting_values.notifications": 2,
+                    "profile.default_content_settings.popups": 0
                 }
                 options.add_experimental_option("prefs", prefs)
             
             # FIXED: Use correct experimental options format
             options.add_experimental_option('useAutomationExtension', False)
+            options.add_experimental_option("excludeSwitches", ["enable-automation"])
             
             # Additional stealth options
             options.add_argument('--disable-default-apps')
@@ -357,35 +361,79 @@ class AdvancedScraperBase:
             options.add_argument('--disable-backgrounding-occluded-windows')
             options.add_argument('--disable-renderer-backgrounding')
             
-            # Try undetected-chromedriver first (more reliable)
+            # Try different driver approaches in order of preference
+            driver = None
+            
+            # 1. Try undetected-chromedriver first (most reliable)
             if UC_AVAILABLE:
                 try:
-                    self.logger.debug("Attempting undetected-chromedriver...")
+                    self.logger.debug("🔄 Attempting undetected-chromedriver...")
                     driver = uc.Chrome(options=options, version_main=None)
                     self.logger.info("✅ Undetected Chrome driver initialized successfully")
                 except Exception as e:
-                    self.logger.warning(f"Undetected Chrome failed: {e}")
-                    raise e
-            else:
-                # Fallback to standard ChromeDriver
-                self.logger.debug("Using standard ChromeDriver...")
-                driver = webdriver.Chrome(options=options)
-                self.logger.info("✅ Standard Chrome driver initialized successfully")
+                    self.logger.warning(f"⚠️ Undetected Chrome failed: {e}")
+                    driver = None
             
-            # Additional anti-detection measures
-            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            driver.execute_script("Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]})")
-            driver.execute_script("Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']})")
+            # 2. Try with webdriver-manager for auto-installation
+            if not driver:
+                try:
+                    from webdriver_manager.chrome import ChromeDriverManager
+                    from selenium.webdriver.chrome.service import Service
+                    
+                    self.logger.debug("🔄 Using webdriver-manager for auto-installation...")
+                    service = Service(ChromeDriverManager().install())
+                    driver = webdriver.Chrome(service=service, options=options)
+                    self.logger.info("✅ Chrome driver with webdriver-manager initialized successfully")
+                except ImportError:
+                    self.logger.debug("webdriver-manager not available, trying standard approach")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ webdriver-manager failed: {e}")
             
-            # Set timeouts
-            driver.set_page_load_timeout(self.config['timeout'])
-            driver.implicitly_wait(10)
+            # 3. Fallback to standard ChromeDriver
+            if not driver:
+                try:
+                    self.logger.debug("🔄 Using standard ChromeDriver...")
+                    driver = webdriver.Chrome(options=options)
+                    self.logger.info("✅ Standard Chrome driver initialized successfully")
+                except Exception as e:
+                    self.logger.error(f"❌ Standard Chrome driver also failed: {e}")
+                    
+                    # 4. Last resort: try without any service
+                    try:
+                        self.logger.debug("🔄 Last resort: minimal Chrome setup...")
+                        minimal_options = Options()
+                        minimal_options.add_argument('--headless=new')
+                        minimal_options.add_argument('--no-sandbox')
+                        minimal_options.add_argument('--disable-dev-shm-usage')
+                        driver = webdriver.Chrome(options=minimal_options)
+                        self.logger.info("✅ Minimal Chrome driver initialized successfully")
+                    except Exception as final_e:
+                        self.logger.error(f"❌ All Chrome driver approaches failed: {final_e}")
+                        return None
             
-            self.driver = driver
-            return driver
+            if driver:
+                # Apply anti-detection measures
+                try:
+                    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+                    driver.execute_script("Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]})")
+                    driver.execute_script("Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']})")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Anti-detection script failed: {e}")
+                
+                # Set timeouts
+                try:
+                    driver.set_page_load_timeout(self.config['timeout'])
+                    driver.implicitly_wait(10)
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Timeout setting failed: {e}")
+                
+                self.driver = driver
+                return driver
+            
+            return None
             
         except Exception as e:
-            self.logger.error(f"❌ All Chrome driver options failed: {str(e)}")
+            self.logger.error(f"❌ Critical error in Chrome driver setup: {str(e)}")
             return None
     
     def safe_selenium_request(self, url: str, wait_for_element: Optional[str] = None,

@@ -56,7 +56,8 @@ export default function MovieDetailPage() {
     try {
       setLoadingAnalytics(true)
       console.log('📊 Loading analytics for:', id)
-      const response = await fetch(`http://localhost:8000/api/movies/${id}/analysis`)
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const response = await fetch(`${API_BASE_URL}/api/movies/${id}/analysis`)
       console.log('📊 Analytics response status:', response.status)
       
       if (response.ok) {
@@ -89,7 +90,8 @@ export default function MovieDetailPage() {
       console.log('🎬 Starting analysis for movie:', movie.id)
       
       // Call the backend analyze endpoint directly
-      const response = await fetch(`http://localhost:8000/api/movies/${movie.id}/analyze`, {
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const response = await fetch(`${API_BASE_URL}/api/movies/${movie.id}/analyze`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

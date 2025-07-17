@@ -37,24 +37,16 @@ export function MovieGrid() {
   const [trendingMovies, setTrendingMovies] = useState<Movie[]>([])
   const [popularMovies, setPopularMovies] = useState<Movie[]>([])
   const [topRatedMovies, setTopRatedMovies] = useState<Movie[]>([])
-  const [recentlyAddedMovies, setRecentlyAddedMovies] = useState<Movie[]>([])
   const [featuredMovie, setFeaturedMovie] = useState<any>(null)
   const [loadingSpecialData, setLoadingSpecialData] = useState(true)
-  const [hasSearchHistory, setHasSearchHistory] = useState(false)
-
-  // Check if user has search history on component mount
-  useEffect(() => {
-    const history = getSearchHistory()
-    setHasSearchHistory(history.length > 0)
-  }, [])
 
   // Add current search to history when searching
   useEffect(() => {
     if (searchQuery && searchQuery.trim()) {
       addToSearchHistory(searchQuery.trim())
-      setHasSearchHistory(true)
     }
   }, [searchQuery])
+  
   useEffect(() => {
     const loadSpecialData = async () => {
       try {
@@ -71,25 +63,6 @@ export function MovieGrid() {
         // Get top rated movies (rating > 8.0)
         const topRated = movies.filter(m => m.rating && m.rating > 8.0).slice(0, 15)
         setTopRatedMovies(topRated)
-        
-        // Set recently added based on search history or fallback to latest movies
-        const history = getSearchHistory()
-        let recentMovies: Movie[] = []
-        
-        if (history.length > 0 && hasSearchHistory) {
-          // Get movies from search history
-          const historyMovies = movies.filter(m => 
-            history.some(term => 
-              m.title.toLowerCase().includes(term.toLowerCase()) ||
-              m.genre?.some(g => g.toLowerCase().includes(term.toLowerCase()))
-            )
-          ).slice(0, 15)
-          recentMovies = historyMovies
-        } else {
-          // Fallback to latest movies for new users
-          recentMovies = movies.slice(0, 15)
-        }
-        setRecentlyAddedMovies(recentMovies)
         
         // Set featured movie from trending
         if (trending && trending.length > 0) {
@@ -111,7 +84,6 @@ export function MovieGrid() {
         setTrendingMovies(movies.slice(0, 15))
         setPopularMovies(movies.slice(5, 20))
         setTopRatedMovies(movies.filter(m => m.rating && m.rating > 7.0).slice(0, 15))
-        setRecentlyAddedMovies(movies.slice(1, 16))
       } finally {
         setLoadingSpecialData(false)
       }
@@ -120,7 +92,7 @@ export function MovieGrid() {
     if (!searchQuery) {
       loadSpecialData()
     }
-  }, [searchQuery, movies, hasSearchHistory])
+  }, [searchQuery, movies])
 
   if (isLoading || (loadingSpecialData && !searchQuery)) {
     return (
@@ -149,11 +121,8 @@ export function MovieGrid() {
         <div className="space-y-8 mt-8">
           <MovieRow title="🔥 Trending Now" movies={trendingMovies.length > 0 ? trendingMovies : movies.slice(0, 15)} />
           <MovieRow title="⭐ Popular Movies" movies={popularMovies.length > 0 ? popularMovies : movies.slice(10, 25)} />
-          <MovieRow title="� Top Rated" movies={topRatedMovies.length > 0 ? topRatedMovies : movies.filter(m => m.rating && m.rating > 8.0).slice(0, 15)} />
-          <MovieRow title="� Suggested Movies" movies={movies.slice(2, 17)} />
-          {hasSearchHistory && (
-            <MovieRow title="� Recently Added" movies={recentlyAddedMovies} />
-          )}
+          <MovieRow title="🏆 Top Rated" movies={topRatedMovies.length > 0 ? topRatedMovies : movies.filter(m => m.rating && m.rating > 8.0).slice(0, 15)} />
+          <MovieRow title="💎 Suggested Movies" movies={movies.slice(2, 17)} />
         </div>
       </motion.div>
     )

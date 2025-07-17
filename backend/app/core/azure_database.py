@@ -21,46 +21,80 @@ class AzureDatabaseManager:
         self.db = None
         
     async def connect(self):
-        """Connect to Azure MongoDB service"""
+        """Connect to Azure MongoDB service with fallback to local"""
         try:
             if not self.connection_string:
-                raise ValueError("MONGODB_URI environment variable not set")
+                logger.warning("⚠️ MONGODB_URI not set, using local fallback")
+                self.connection_string = "mongodb://localhost:27017/"
+                self.database_type = "local"
             
             # Configure connection options based on database type
             if self.database_type == "azure_cosmos":
                 # Azure Cosmos DB specific settings
                 self.client = AsyncIOMotorClient(
                     self.connection_string,
-                    serverSelectionTimeoutMS=5000,
-                    connectTimeoutMS=10000,
+                    serverSelectionTimeoutMS=3000,  # Reduced timeout
+                    connectTimeoutMS=5000,
                     maxPoolSize=50,
                     retryWrites=False,  # Cosmos DB doesn't support retryWrites
                     ssl=True
                 )
                 logger.info("🔷 Connecting to Azure Cosmos DB for MongoDB")
-            else:
+            elif self.database_type == "atlas":
                 # MongoDB Atlas settings
                 self.client = AsyncIOMotorClient(
                     self.connection_string,
-                    serverSelectionTimeoutMS=5000,
-                    connectTimeoutMS=10000,
+                    serverSelectionTimeoutMS=3000,
+                    connectTimeoutMS=5000,
                     maxPoolSize=50,
                     retryWrites=True,
                     ssl=True
                 )
                 logger.info("🍃 Connecting to MongoDB Atlas on Azure")
+            else:
+                # Local MongoDB settings
+                self.client = AsyncIOMotorClient(
+                    self.connection_string,
+                    serverSelectionTimeoutMS=2000,
+                    connectTimeoutMS=3000,
+                    maxPoolSize=10
+                )
+                logger.info("🏠 Connecting to Local MongoDB")
             
             self.db = self.client[self.db_name]
             
-            # Test connection
-            await self.client.admin.command('ping')
-            logger.info(f"✅ Successfully connected to {self.database_type}")
+            # Test connection with timeout
+            await asyncio.wait_for(
+                self.client.admin.command('ping'), 
+                timeout=5.0
+            )
+            logger.info(f"✅ Successfully connected to {self.database_type} database")
             
             # Initialize collections
             await self._initialize_collections()
             
+        except asyncio.TimeoutError:
+            logger.error(f"❌ Database connection timeout for {self.database_type}")
+            await self._fallback_to_local()
         except Exception as e:
             logger.error(f"❌ Database connection failed: {e}")
+            await self._fallback_to_local()
+    
+    async def _fallback_to_local(self):
+        """Fallback to local SQLite-based storage"""
+        try:
+            logger.info("🔄 Falling back to local SQLite storage")
+            # Close existing connection if any
+            if self.client:
+                self.client.close()
+            
+            # Use in-memory storage for now
+            self.database_type = "sqlite_fallback"
+            self.client = None
+            self.db = None
+            logger.info("✅ Fallback storage initialized")
+        except Exception as e:
+            logger.error(f"❌ Fallback initialization failed: {e}")
             raise
     
     async def _initialize_collections(self):

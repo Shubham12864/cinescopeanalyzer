@@ -65,7 +65,8 @@ class EnhancedRedditAnalyzer:
             nltk.download('punkt', quiet=True)
             nltk.download('stopwords', quiet=True)
             nltk.download('wordnet', quiet=True)
-        except:
+        except Exception as e:
+            self.logger.warning(f"Failed to download NLTK data: {e}")
             pass
     
     async def comprehensive_movie_analysis(self, movie_title: str, imdb_id: str = None, 

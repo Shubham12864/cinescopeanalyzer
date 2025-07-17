@@ -18,9 +18,21 @@ async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise
     },
     ...options,
   }
+  
   try {
     console.log(`🔗 API Call: ${url}`)
-    const response = await fetch(url, config)
+    
+    // Add timeout to fetch
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 30000)
+    
+    const response = await fetch(url, {
+      ...config,
+      signal: controller.signal
+    })
+    
+    clearTimeout(timeoutId)
+    
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}))
       console.error(`❌ API Error: ${response.status} - ${errorData.detail || response.statusText}`)
@@ -29,21 +41,36 @@ async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise
         response.status
       )
     }
+
     const data = await response.json()
-    console.log(`✅ API Response:`, data)
+    console.log(`✅ API Success: ${url} - ${Array.isArray(data) ? data.length + ' items' : 'object'}`)
     return data
   } catch (error) {
-    console.error('🚨 API call failed:', error)
     if (error instanceof ApiError) {
       throw error
     }
-    throw new ApiError('Network error occurred')
+    
+    // Handle network errors
+    if (error instanceof Error) {
+      if (error.name === 'AbortError') {
+        console.error(`⏱️ API Timeout: ${url}`)
+        throw new ApiError('Request timeout - please try again', 408)
+      }
+      
+      if (error.message.includes('Failed to fetch')) {
+        console.error(`🌐 Network Error: ${url}`)
+        throw new ApiError('Network error - please check your connection', 0)
+      }
+    }
+    
+    console.error(`💥 API Unexpected Error: ${url}`, error)
+    throw new ApiError(`Unexpected error: ${error}`, 500)
   }
 }
 
 export const movieApi = {
   async testConnection() {
-    return fetchApi<{status: string, message: string}>('/api/health')
+    return fetchApi<{status: string, message: string}>('/health')
   },
   async getMovies() {
     return fetchApi<Movie[]>('/api/movies')
@@ -73,17 +100,25 @@ export const movieApi = {
   async getAnalytics() {
     return fetchApi<AnalyticsData>('/api/analytics')
   },
-  async getPopularMovies() {
-    return fetchApi<Movie[]>('/api/movies/popular')
+  async getPopularMovies(limit?: number) {
+    const params = limit ? `?limit=${limit}` : ''
+    return fetchApi<Movie[]>(`/api/movies/popular${params}`)
   },
-  async getRecentMovies() {
-    return fetchApi<Movie[]>('/api/movies/recent')
+  async getRecentMovies(limit?: number) {
+    const params = limit ? `?limit=${limit}` : ''
+    return fetchApi<Movie[]>(`/api/movies/recent${params}`)
   },
-  async getTrendingMovies() {
-    return fetchApi<Movie[]>('/api/movies/trending')
+  async getTrendingMovies(limit?: number) {
+    const params = limit ? `?limit=${limit}` : ''
+    return fetchApi<Movie[]>(`/api/movies/trending${params}`)
   },
-  async getSuggestions() {
-    return fetchApi<Movie[]>('/api/movies/suggestions')
+  async getSuggestions(limit?: number) {
+    const params = limit ? `?limit=${limit}` : ''
+    return fetchApi<Movie[]>(`/api/movies/suggestions${params}`)
+  },
+  async getTopRatedMovies(limit?: number) {
+    const params = limit ? `?limit=${limit}` : ''
+    return fetchApi<Movie[]>(`/api/movies/top-rated${params}`)
   },
   async getMovieReviews(movieId: string) {
     return fetchApi<Review[]>(`/api/movies/${movieId}/reviews`)

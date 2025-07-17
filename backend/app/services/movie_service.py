@@ -84,7 +84,7 @@ class MovieService:
                 id="1",
                 title="The Shawshank Redemption",
                 year=1994,
-                poster="https://via.placeholder.com/300x450?text=Shawshank",
+                poster="https://m.media-amazon.com/images/M/MV5BNDE3ODcxYzMtY2YzZC00NmNlLWJiNDMtZDViZWM2MzIxZDYwXkEyXkFqcGdeQXVyNjAwNDUxODI@._V1_SX300.jpg",
                 rating=9.3,
                 genre=["Drama"],
                 plot="Two imprisoned men bond over a number of years, finding solace and eventual redemption through acts of common decency.",
@@ -101,11 +101,10 @@ class MovieService:
                     )
                 ]
             ),
-            Movie(
-                id="2", 
+            Movie(                id="2",
                 title="The Godfather",
                 year=1972,
-                poster="https://via.placeholder.com/300x450?text=Godfather",
+                poster="https://m.media-amazon.com/images/M/MV5BM2MyNjYxNmUtYTAwNi00MTYxLWJmNWYtYzZlODY3ZTk3OTFlXkEyXkFqcGdeQXVyNzAwMjU2MjU@._V1_SX300.jpg",
                 rating=9.2,
                 genre=["Crime", "Drama"],
                 plot="The aging patriarch of an organized crime dynasty transfers control of his clandestine empire to his reluctant son.",
@@ -217,26 +216,29 @@ class MovieService:
         db_movie = await self._get_movie_from_db(movie_id)
         if db_movie:
             movie = self._convert_dict_to_movie(db_movie)
-            self.logger.info(f"✅ Found movie in database: {movie.title}")
-            
-            # Check if we need to enhance the description
-            if not hasattr(movie, 'enhanced_data') or not movie.enhanced_data:
-                self.logger.info(f"🚀 Enhancing description for: {movie.title}")
-                try:
-                    enhanced_data = await self.description_scraper.get_comprehensive_description(
-                        movie.title, movie.year, movie.imdbId or ""
-                    )
-                    movie.enhanced_data = enhanced_data
-                    # Update plot with enhanced description
-                    if enhanced_data.get('full_description'):
-                        movie.plot = enhanced_data['full_description']
-                    self.logger.info(f"✅ Enhanced description added for: {movie.title}")
-                except Exception as e:
-                    self.logger.warning(f"Failed to enhance description for {movie.title}: {e}")
-                    if not hasattr(movie, 'enhanced_data'):
-                        movie.enhanced_data = {}
-            
-            return movie
+            if movie:  # Check if conversion was successful
+                self.logger.info(f"✅ Found movie in database: {movie.title}")
+                
+                # Check if we need to enhance the description
+                if not hasattr(movie, 'enhanced_data') or not movie.enhanced_data:
+                    self.logger.info(f"🚀 Enhancing description for: {movie.title}")
+                    try:
+                        enhanced_data = await self.description_scraper.get_comprehensive_description(
+                            movie.title, movie.year, movie.imdbId or ""
+                        )
+                        movie.enhanced_data = enhanced_data
+                        # Update plot with enhanced description
+                        if enhanced_data.get('full_description'):
+                            movie.plot = enhanced_data['full_description']
+                        self.logger.info(f"✅ Enhanced description added for: {movie.title}")
+                    except Exception as e:
+                        self.logger.warning(f"Failed to enhance description for {movie.title}: {e}")
+                        if not hasattr(movie, 'enhanced_data'):
+                            movie.enhanced_data = {}
+                
+                return movie
+            else:
+                self.logger.warning(f"Failed to convert database movie data for {movie_id}")
         
         # If not found in database, check the local movies_db list
         self.logger.info(f"🔍 Movie {movie_id} not in database, checking local movies list...")
@@ -1006,7 +1008,8 @@ class MovieService:
                             if movie and movie.title.lower() not in seen_titles:
                                 final_movies.append(movie)
                                 seen_titles.add(movie.title.lower())
-                        except:
+                        except Exception as e:
+                            self.logger.warning(f"Failed to process movie data: {e}")
                             continue
                             
                 except Exception as e:
@@ -1093,9 +1096,11 @@ class MovieService:
             # First try to get poster from movie_data
             poster_url = movie_data.get('poster', movie_data.get('Poster', ''))
             
-            # If we have a valid URL, return it
+            # If we have a valid URL, clean and return it
             if poster_url and poster_url != 'N/A' and poster_url.startswith('http'):
-                return poster_url
+                # Clean the URL by removing any whitespace or line breaks
+                cleaned_url = poster_url.replace('\n', '').replace('\r', '').replace(' ', '').strip()
+                return cleaned_url
             
             # Use real poster path method
             return self._get_real_poster_path(movie_data)
@@ -1134,12 +1139,12 @@ class MovieService:
                 if movie_title in title_lower or title_lower in movie_title:
                     return poster_url
             
-            # Default high-quality placeholder
-            return f"https://via.placeholder.com/300x450/2c3e50/ecf0f1?text={title.replace(' ', '%20')}%20({year})"
+            # Default high-quality placeholder with movie theme
+            return f"https://dummyimage.com/300x450/1a1a1a/ffffff.png&text={title.replace(' ', '%20')}%0A({year})"
             
         except Exception as e:
             self.logger.warning(f"Error generating real poster path: {e}")
-            return "https://via.placeholder.com/300x450/2c3e50/ecf0f1?text=Movie%20Poster"
+            return "https://dummyimage.com/300x450/1a1a1a/ffffff.png&text=Movie%0APoster"
     
     async def _ensure_database_connection(self):
         """Ensure database collections are initialized"""

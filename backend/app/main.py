@@ -1,7 +1,12 @@
+import warnings
+import os
+# Suppress cryptography deprecation warnings at startup
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="cryptography")
+os.environ["PYTHONWARNINGS"] = "ignore::DeprecationWarning"
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
-import os
 from dotenv import load_dotenv
 
 # Import API routes
@@ -21,9 +26,18 @@ app = FastAPI(
 )
 
 # Configure CORS for React frontend
+# Get allowed origins from environment or use defaults
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "").split(",") if os.getenv("ALLOWED_ORIGINS") else [
+    "http://localhost:3000",
+    "http://localhost:3001", 
+    "https://cinescopeanalyzer.vercel.app",
+    "https://cinescopeanalyzer-production.up.railway.app",
+    "*"  # Allow all for development - remove in production
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for development
+    allow_origins=allowed_origins,
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"],
     allow_headers=["*"],

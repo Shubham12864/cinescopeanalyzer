@@ -48,28 +48,46 @@ class APIManager:
         # Initialize logger first
         self.logger = logging.getLogger(__name__)
         
-        # Load API keys from environment (force real data usage)
+        # Load API keys from environment with better validation
         omdb_key = os.getenv("OMDB_API_KEY")
         tmdb_key = os.getenv("TMDB_API_KEY")
         
-        # Validate API keys
-        if not omdb_key or omdb_key == "demo_key":
-            self.logger.warning("⚠️ OMDB API key not found or is demo - search may be limited")
+        # Validate API keys with better error handling
+        self.has_omdb = bool(omdb_key and omdb_key != "demo_key" and len(omdb_key) > 5)
+        self.has_tmdb = bool(tmdb_key and tmdb_key != "demo_key_12345" and len(tmdb_key) > 5)
+        
+        if not self.has_omdb:
+            self.logger.warning("⚠️ OMDB API key missing/invalid - using fallback data sources")
         else:
             self.logger.info(f"✅ OMDB API key loaded: {omdb_key[:8]}...")
             
-        if not tmdb_key or tmdb_key == "demo_key_12345":
-            self.logger.warning("⚠️ TMDB API key not found or is demo - search may be limited")
+        if not self.has_tmdb:
+            self.logger.warning("⚠️ TMDB API key missing/invalid - using fallback data sources")
         else:
             self.logger.info(f"✅ TMDB API key loaded: {tmdb_key[:8]}...")
         
-        # Initialize APIs with real keys
-        self.omdb_api = OMDbAPI(omdb_key or "demo_key")
-        self.tmdb_api = TMDBApi(tmdb_key or "demo_key_12345")
+        # Initialize APIs with error handling
+        try:
+            self.omdb_api = OMDbAPI(omdb_key or "demo_key")
+        except Exception as e:
+            self.logger.error(f"❌ OMDB API initialization failed: {e}")
+            self.omdb_api = None
+            self.has_omdb = False
+            
+        try:
+            self.tmdb_api = TMDBApi(tmdb_key or "demo_key_12345")
+        except Exception as e:
+            self.logger.error(f"❌ TMDB API initialization failed: {e}")
+            self.tmdb_api = None
+            self.has_tmdb = False
         
-        # Initialize Redis-like cache system
-        self.cache = HybridCache()
-        self.logger.info("💾 Free Redis-like cache system initialized")
+        # Initialize cache with error handling
+        try:
+            self.cache = HybridCache()
+            self.logger.info("💾 Hybrid cache system initialized")
+        except Exception as e:
+            self.logger.error(f"❌ Cache initialization failed: {e}")
+            self.cache = None
         
         # Initialize Scrapy search service
         self.scrapy_search = None

@@ -257,7 +257,8 @@ class ScrapySearchService:
             if rating_elem:
                 try:
                     details['rating'] = float(rating_elem.get_text(strip=True))
-                except:
+                except (ValueError, AttributeError) as e:
+                    self.logger.warning(f"Failed to parse rating: {e}")
                     pass
             
             # Extract genres

@@ -6,6 +6,8 @@ import { Play, Info } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useMovieContext } from '@/contexts/movie-context'
 import { movieApi } from '@/lib/api'
+import { MovieImage } from '@/components/ui/movie-image'
+import { SimpleMovieImage } from '@/components/ui/simple-movie-image'
 import type { Movie } from '@/types/movie'
 
 const SUGGESTED_TITLES = [
@@ -34,7 +36,7 @@ export function MovieSuggestions() {
       
       if (isBackendConnected) {
         // Try to get suggestions from backend
-        const backendSuggestions = await movieApi.getSuggestions()
+        const backendSuggestions = await movieApi.getSuggestions(12)
         if (backendSuggestions && backendSuggestions.length > 0) {
           setSuggestions(backendSuggestions.slice(0, 4))
           return
@@ -170,10 +172,12 @@ export function MovieSuggestions() {
             onClick={() => handleSuggestionClick(movie)}
           >
             <div className="relative aspect-[2/3] rounded-lg overflow-hidden bg-gray-900">
-              <img
+              <SimpleMovieImage
                 src={movie.poster || '/placeholder.svg?height=600&width=400'}
                 alt={movie.title}
                 className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
+                width={300}
+                height={450}
               />
               <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
                 <div className="flex gap-2">

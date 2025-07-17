@@ -114,9 +114,12 @@ class MovieDataStoragePipeline:
     def _store_in_database(self, adapter: ItemAdapter, spider):
         """Store item in SQLite database for quick access"""
         try:
+            # Ensure directory exists
+            os.makedirs('scraped_data', exist_ok=True)
+            
             # Create/connect to database
             db_path = 'scraped_data/movie_data.db'
-            conn = sqlite3.connect(db_path)
+            conn = sqlite3.connect(db_path, timeout=30.0)
             cursor = conn.cursor()
             
             # Create table if not exists
@@ -150,8 +153,10 @@ class MovieDataStoragePipeline:
             conn.commit()
             conn.close()
             
-        except Exception as e:
+        except sqlite3.Error as e:
             spider.logger.error(f"Database storage failed: {e}")
+        except Exception as e:
+            spider.logger.error(f"Unexpected error in database storage: {e}")
 
 class DuplicateFilterPipeline:
     """Filter out duplicate items"""

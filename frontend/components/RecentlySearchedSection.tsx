@@ -3,6 +3,7 @@
 import React from 'react'
 import { motion } from 'framer-motion'
 import { Clock, X, Search } from 'lucide-react'
+import Image from 'next/image'
 import { useRecentlySearched } from '@/hooks/useRecentlySearched'
 import { useMovieContext } from '@/contexts/movie-context'
 
@@ -70,10 +71,12 @@ export function RecentlySearchedSection({ className = '' }: RecentlySearchedSect
                   {item.movie && (
                   <div className="flex items-center gap-2">
                     {item.movie.poster && (
-                      <img 
+                      <Image 
                         src={item.movie.poster} 
                         alt={item.movie.title}
-                        className="w-8 h-12 object-cover rounded"
+                        width={32}
+                        height={48}
+                        className="object-cover rounded"
                       />
                     )}
                     <div className="min-w-0">

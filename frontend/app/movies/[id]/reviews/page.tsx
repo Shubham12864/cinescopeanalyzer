@@ -215,7 +215,11 @@ export default function MovieReviewsPage() {
     }
   }
 
-  const getSentimentColor = (sentiment: string) => {
+  const getSentimentColor = (sentiment: string | undefined) => {
+    if (!sentiment) {
+      return 'text-gray-400 bg-gray-600/20 border-gray-600/30'
+    }
+    
     switch (sentiment.toLowerCase()) {
       case 'very positive':
         return 'text-green-400 bg-green-600/20 border-green-600/30'

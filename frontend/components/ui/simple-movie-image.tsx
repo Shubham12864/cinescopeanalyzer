@@ -1,95 +1,67 @@
 "use client"
 
 import React, { useState, useEffect } from 'react'
-import Image from 'next/image'
 import { cn } from '@/lib/utils'
 
-interface MovieImageProps {
+interface SimpleMovieImageProps {
   src?: string | null
   alt: string
   className?: string
-  priority?: boolean
-  fill?: boolean
   width?: number
   height?: number
-  fallbackSrc?: string
 }
 
-export function MovieImage({ 
+export function SimpleMovieImage({ 
   src, 
   alt, 
   className, 
-  priority = false, 
-  fill = false,
-  width = 300,  // Default width
-  height = 450, // Default height (movie poster ratio)
-  fallbackSrc
-}: MovieImageProps) {
-  // Generate fallback image with movie title
+  width = 300,
+  height = 450
+}: SimpleMovieImageProps) {
   const generateFallback = (title: string) => {
     const encodedTitle = encodeURIComponent(title.slice(0, 20))
     return `https://dummyimage.com/300x450/1a1a1a/ffffff.png&text=${encodedTitle}`
   }
 
-  const defaultFallback = fallbackSrc || generateFallback(alt || 'Movie')
+  const defaultFallback = generateFallback(alt || 'Movie')
   const [imgSrc, setImgSrc] = useState(src || defaultFallback)
-  const [loading, setLoading] = useState(!!src)
   const [error, setError] = useState(false)
+
   const handleError = () => {
-    console.error('🖼️ Image failed to load:', imgSrc)
+    console.error('🖼️ Simple image failed to load:', imgSrc)
     if (!error && imgSrc !== defaultFallback) {
       setError(true)
       setImgSrc(defaultFallback)
-      setLoading(false)
     }
   }
 
   const handleLoad = () => {
-    console.log('🖼️ Image loaded successfully:', imgSrc)
-    setLoading(false)
-    setError(false)
+    console.log('🖼️ Simple image loaded successfully:', imgSrc)
   }
 
-  // Update image source when src prop changes
   useEffect(() => {
     if (!src || src === 'N/A' || src.includes('placeholder')) {
       console.log('🖼️ Using fallback for invalid src:', src)
       setImgSrc(defaultFallback)
-      setLoading(false)
       setError(false)
     } else {
       // Clean the URL by removing any line breaks or whitespace
       const cleanSrc = src.replace(/\s+/g, '').trim()
-      console.log('🖼️ Setting clean image src:', cleanSrc)
+      console.log('🖼️ Setting clean simple image src:', cleanSrc)
       setImgSrc(cleanSrc)
-      setLoading(!!cleanSrc)
       setError(false)
     }
   }, [src, defaultFallback])
 
   return (
     <div className={cn("relative overflow-hidden", className)}>
-      {loading && (
-        <div className="absolute inset-0 bg-gray-800 animate-pulse flex items-center justify-center">
-          <div className="w-12 h-12 border-4 border-red-600 border-t-transparent rounded-full animate-spin" />
-        </div>
-      )}
-      
-      <Image
+      <img
         src={imgSrc}
         alt={alt}
-        fill={fill}
-        width={fill ? undefined : width}
-        height={fill ? undefined : height}
-        className={cn(
-          "transition-opacity duration-300",
-          loading ? "opacity-0" : "opacity-100",
-          "object-cover"
-        )}
-        priority={priority}
+        style={{ width: `${width}px`, height: `${height}px` }}
+        className="object-cover transition-opacity duration-300"
         onError={handleError}
         onLoad={handleLoad}
-        unoptimized={imgSrc.includes('placeholder') || imgSrc.includes('via.placeholder') || imgSrc.includes('dummyimage')}
       />
       
       {error && imgSrc === defaultFallback && (
