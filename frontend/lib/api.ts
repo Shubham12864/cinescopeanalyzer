@@ -1,6 +1,32 @@
 import type { Movie, Review, AnalyticsData, SearchFilters, ApiResponse, PaginatedResponse } from '@/types/movie'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+// Robust API URL detection with fallbacks
+const getApiBaseUrl = () => {
+  // Check environment variable first
+  if (typeof window !== 'undefined') {
+    // Client-side: check for runtime environment
+    const envUrl = process.env.NEXT_PUBLIC_API_URL
+    if (envUrl) {
+      console.log('🔗 Using API URL from environment:', envUrl)
+      return envUrl
+    }
+  }
+  
+  // Fallback URLs based on current environment
+  if (typeof window !== 'undefined') {
+    const currentHost = window.location.hostname
+    if (currentHost === 'localhost' || currentHost === '127.0.0.1') {
+      console.log('🔗 Using localhost fallback API URL')
+      return 'http://localhost:8000'
+    }
+  }
+  
+  // Default fallback
+  console.log('🔗 Using default API URL fallback')
+  return 'http://localhost:8000'
+}
+
+const API_BASE_URL = getApiBaseUrl()
 
 class ApiError extends Error {
   constructor(message: string, public status?: number) {
@@ -57,9 +83,9 @@ async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise
         throw new ApiError('Request timeout - please try again', 408)
       }
       
-      if (error.message.includes('Failed to fetch')) {
+      if (error.message.includes('Failed to fetch') || error.message.includes('fetch')) {
         console.error(`🌐 Network Error: ${url}`)
-        throw new ApiError('Network error - please check your connection', 0)
+        throw new ApiError('Network error - please check your connection and ensure the backend is running', 0)
       }
     }
     
@@ -70,7 +96,27 @@ async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise
 
 export const movieApi = {
   async testConnection() {
-    return fetchApi<{status: string, message: string}>('/health')
+    console.log(`🔗 Testing connection to: ${API_BASE_URL}`)
+    
+    // Try multiple endpoints for connection testing
+    const endpoints = ['/health', '/api/health', '/']
+    
+    for (const endpoint of endpoints) {
+      try {
+        console.log(`🔗 Attempting connection to: ${API_BASE_URL}${endpoint}`)
+        const result = await fetchApi<{status?: string, message?: string}>(endpoint)
+        console.log(`✅ Connection successful via ${endpoint}:`, result)
+        return result
+      } catch (error) {
+        console.warn(`⚠️ Connection failed via ${endpoint}:`, error)
+        if (endpoint === endpoints[endpoints.length - 1]) {
+          // This was the last endpoint, throw the error
+          throw error
+        }
+        // Continue to next endpoint
+        continue
+      }
+    }
   },
   async getMovies() {
     return fetchApi<Movie[]>('/api/movies')

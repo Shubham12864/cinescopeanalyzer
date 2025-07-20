@@ -27,37 +27,37 @@ export function NetflixHeroBanner({ featuredMovie }: NetflixHeroBannerProps) {
   const [movies, setMovies] = useState<FeaturedMovie[]>([])
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
-  // Fallback movies for when API fails
+  // Fallback movies for when API fails - using real movie IDs from our backend
   const fallbackMovies: FeaturedMovie[] = [
     {
-      id: "trending-1",
-      title: "Spider-Man: No Way Home",
-      description:
-        "With Spider-Man's identity now revealed, Peter asks Doctor Strange for help. When a spell goes wrong, dangerous foes from other worlds start to appear, forcing Peter to discover what it truly means to be Spider-Man.",
-      backdrop: "https://via.placeholder.com/1920x1080/1a1a1a/ffffff?text=Spider-Man%3A%20No%20Way%20Home",
-      rating: 8.2,
-      year: 2021,
-      genre: ["Action", "Adventure", "Fantasy"],
-    },
-    {
-      id: "trending-2", 
+      id: "tt4154796", // Avengers: Endgame
       title: "Avengers: Endgame",
       description:
-        "After the devastating events of Infinity War, the universe is in ruins. With the help of remaining allies, the Avengers assemble once more in order to reverse Thanos' actions and restore balance to the universe.",
-      backdrop: "https://via.placeholder.com/1920x1080/2c1810/ffffff?text=Avengers%3A%20Endgame",
+        "After the devastating events of Infinity War, the Avengers assemble once more to reverse Thanos' actions and restore balance to the universe.",
+      backdrop: "http://localhost:8000/api/movies/image-proxy?url=https%3A//m.media-amazon.com/images/M/MV5BMTc5MDE2ODcwNV5BMl5BanBnXkFtZTgwMzI2NzQ2NzM@._V1_SX300.jpg",
       rating: 8.4,
       year: 2019,
       genre: ["Action", "Adventure", "Drama"],
     },
     {
-      id: "trending-3",
-      title: "Dune",
+      id: "tt0468569", // The Dark Knight
+      title: "The Dark Knight",
       description:
-        "Paul Atreides, a brilliant and gifted young man born into a great destiny beyond his understanding, must travel to the most dangerous planet in the universe to ensure the future of his family and his people.",
-      backdrop: "https://via.placeholder.com/1920x1080/8B4513/ffffff?text=Dune",
-      rating: 8.0,
-      year: 2021,
-      genre: ["Adventure", "Drama", "Sci-Fi"],
+        "Batman raises the stakes in his war on crime with the help of Lieutenant Jim Gordon and District Attorney Harvey Dent.",
+      backdrop: "http://localhost:8000/api/movies/image-proxy?url=https%3A//m.media-amazon.com/images/M/MV5BMTMxNTMwODM0NF5BMl5BanBnXkFtZTcwODAyMTk2Mw@@._V1_SX300.jpg",
+      rating: 9.0,
+      year: 2008,
+      genre: ["Action", "Crime", "Drama"],
+    },
+    {
+      id: "tt1375666", // Inception
+      title: "Inception",
+      description:
+        "A thief who steals corporate secrets through dream-sharing technology is given the inverse task of planting an idea into the mind of a C.E.O.",
+      backdrop: "http://localhost:8000/api/movies/image-proxy?url=https%3A//m.media-amazon.com/images/M/MV5BMjAxMzY3NjcxNF5BMl5BanBnXkFtZTcwNTI5OTM0Mw@@._V1_SX300.jpg",
+      rating: 8.8,
+      year: 2010,
+      genre: ["Action", "Sci-Fi", "Thriller"],
     }
   ]
 
@@ -65,21 +65,29 @@ export function NetflixHeroBanner({ featuredMovie }: NetflixHeroBannerProps) {
   const fetchFeaturedMovies = async () => {
     try {
       setIsLoading(true)
-      const response = await fetch('/api/movies/suggestions?limit=6')
+      console.log('🎬 Fetching dynamic featured movies from backend...')
+      
+      // Use the actual backend API endpoint
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const response = await fetch(`${API_BASE_URL}/api/movies/popular?limit=6`)
       
       if (!response.ok) {
-        throw new Error('Failed to fetch movies')
+        throw new Error(`Backend API failed: ${response.status}`)
       }
       
       const data = await response.json()
       
-      if (data.success && data.movies && data.movies.length > 0) {
+      if (data && Array.isArray(data) && data.length > 0) {
         // Transform API movies to featured movie format
-        const transformedMovies: FeaturedMovie[] = data.movies.map((movie: any) => ({
+        const transformedMovies: FeaturedMovie[] = data.map((movie: any) => ({
           id: movie.id,
           title: movie.title,
-          description: movie.plot || movie.description || `${movie.title} is a ${movie.genre?.join(', ')} movie from ${movie.year}.`,
-          backdrop: movie.poster ? `/api/images/proxy?url=${encodeURIComponent(movie.poster)}` : '/placeholder.svg',
+          description: movie.plot || `Experience ${movie.title}, a captivating ${movie.genre?.join(', ')} movie from ${movie.year}.`,
+          backdrop: movie.poster && movie.poster.includes('/api/movies/image-proxy') 
+            ? movie.poster 
+            : movie.poster 
+              ? `${API_BASE_URL}/api/movies/image-proxy?url=${encodeURIComponent(movie.poster)}`
+              : 'https://via.placeholder.com/1920x1080/1a1a1a/ffffff?text=' + encodeURIComponent(movie.title),
           rating: movie.rating || 0,
           year: movie.year || new Date().getFullYear(),
           genre: movie.genre || [],
@@ -88,14 +96,14 @@ export function NetflixHeroBanner({ featuredMovie }: NetflixHeroBannerProps) {
         }))
         
         setMovies(transformedMovies)
-        console.log(`🎬 Loaded ${transformedMovies.length} dynamic featured movies`)
+        console.log(`✅ Loaded ${transformedMovies.length} dynamic featured movies from backend`)
       } else {
-        // Use fallback movies
-        setMovies(fallbackMovies)
-        console.log('📺 Using fallback featured movies')
+        console.warn('⚠️ Backend returned empty data, using fallback movies')
+        throw new Error('Empty response from backend')
       }
     } catch (error) {
-      console.error('Error fetching featured movies:', error)
+      console.error('❌ Error fetching featured movies from backend:', error)
+      console.log('📺 Using fallback featured movies')
       setMovies(fallbackMovies)
     } finally {
       setIsLoading(false)

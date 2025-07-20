@@ -164,22 +164,54 @@ export function MovieProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const refreshMovies = useCallback(async () => {
-    if (!isBackendConnected) {
-      loadMockData()
-      return
-    }
-    
     setIsLoading(true)
     setError(null)
+    
     try {
-      const data = await movieApi.getMovies()
-      setMovies(data)
-      console.log(`✅ Loaded ${data.length} movies from backend`)
+      console.log('🔄 Refreshing movies...')
+      
+      // Always try backend first, even if we think it's disconnected
+      let data: Movie[] = []
+      
+      try {
+        // First try to get popular movies
+        console.log('📡 Attempting to fetch popular movies from backend...')
+        data = await movieApi.getPopularMovies(12)
+        console.log(`✅ Loaded ${data.length} popular movies from backend`)
+        setIsBackendConnected(true)
+      } catch (popularError) {
+        console.warn('⚠️ Popular movies failed, trying general movies endpoint:', popularError)
+        try {
+          data = await movieApi.getMovies()
+          console.log(`✅ Loaded ${data.length} movies from general endpoint`)
+          setIsBackendConnected(true)
+        } catch (generalError) {
+          console.warn('⚠️ General movies endpoint also failed:', generalError)
+          throw generalError
+        }
+      }
+      
+      if (data && data.length > 0) {
+        setMovies(data)
+        console.log(`✅ Successfully set ${data.length} movies in state`)
+      } else {
+        console.warn('⚠️ Backend returned empty data, falling back to mock data')
+        throw new Error('Empty response from backend')
+      }
+      
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch movies')
-      console.error('❌ Failed to load movies:', err)
-      // Fallback to mock data
-      loadMockData()
+      console.error('❌ Failed to load movies from backend:', err)
+      
+      // Only use mock data if backend is truly unreachable
+      if (!isBackendConnected) {
+        console.log('📦 Backend unavailable, loading mock data')
+        loadMockData()
+      } else {
+        console.log('🔄 Backend seems connected but request failed, retrying connection test...')
+        setIsBackendConnected(false)
+        loadMockData()
+      }
     } finally {
       setIsLoading(false)
     }
@@ -239,20 +271,54 @@ export function MovieProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false)
     }
   }, [refreshMovies, isBackendConnected, movies, filters, addRecentlySearched])
-    const testConnection = useCallback(async () => {
+  const testConnection = useCallback(async () => {
     try {
-      await movieApi.testConnection()
+      console.log('🔗 Testing backend connection...')
+      const result = await movieApi.testConnection()
+      console.log('✅ Backend connection successful:', result)
       setIsBackendConnected(true)
-      // Load initial movies after successful connection
-      await refreshMovies()
+      
+      // Load real movies data immediately after successful connection
+      try {
+        console.log('📡 Loading movies from backend after connection test...')
+        
+        // Try multiple endpoints to get real data
+        let moviesData: Movie[] = []
+        
+        try {
+          moviesData = await movieApi.getPopularMovies(20)
+          console.log(`✅ Loaded ${moviesData.length} popular movies`)
+        } catch (popularError) {
+          console.warn('⚠️ Popular movies failed, trying suggestions...', popularError)
+          try {
+            moviesData = await movieApi.getSuggestions(20)
+            console.log(`✅ Loaded ${moviesData.length} movie suggestions`)
+          } catch (suggestionsError) {
+            console.warn('⚠️ Suggestions failed, trying general movies...', suggestionsError)
+            moviesData = await movieApi.getMovies()
+            console.log(`✅ Loaded ${moviesData.length} general movies`)
+          }
+        }
+        
+        if (moviesData && moviesData.length > 0) {
+          setMovies(moviesData)
+          console.log(`✅ Successfully loaded ${moviesData.length} real movies from backend`)
+        } else {
+          console.warn('⚠️ All endpoints returned empty data')
+          throw new Error('No movies available from backend')
+        }
+        
+      } catch (movieError) {
+        console.error('❌ Failed to load any movies from backend:', movieError)
+        setIsBackendConnected(false)
+        loadMockData()
+      }
     } catch (error) {
-      setIsBackendConnected(false)
-      // Only set error for UI feedback, toast will handle notification
       console.error('❌ Backend connection failed:', error)
-      // Load fallback mock data
+      setIsBackendConnected(false)
       loadMockData()
     }
-  }, [refreshMovies, loadMockData])
+  }, [loadMockData])
 
   const analyzeMovie = useCallback(async (movieId: string) => {
     if (!isBackendConnected) {
@@ -278,14 +344,30 @@ export function MovieProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false)
     }
-  }, [isBackendConnected])  // Test connection on mount
+  }, [isBackendConnected])  // Test connection and load data on mount
   useEffect(() => {
-    testConnection()
+    const initializeApp = async () => {
+      console.log('🚀 Initializing CineScope app...')
+      
+      // Always try to connect to backend first
+      try {
+        await testConnection()
+        console.log('✅ App initialization completed with backend connection')
+      } catch (error) {
+        console.warn('⚠️ App initialized with mock data fallback:', error)
+      }
+    }
+    
+    initializeApp()
   }, [testConnection])
+  
+  // Also load movies when backend connection state changes
   useEffect(() => {
-    // Remove the auto-refresh on mount since testConnection handles it
-    // refreshMovies()
-  }, [])
+    if (isBackendConnected) {
+      console.log('🔄 Backend connected, loading fresh movies...')
+      refreshMovies()
+    }
+  }, [isBackendConnected, refreshMovies])
     const value: MovieContextType = {
     movies,
     isLoading,

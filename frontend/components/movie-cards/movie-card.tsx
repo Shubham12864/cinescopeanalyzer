@@ -16,14 +16,27 @@ interface MovieCardProps {
 export function MovieCard({ movie }: MovieCardProps) {
   const router = useRouter()
   const { setSelectedMovie, analyzeMovie, isBackendConnected } = useMovieContext()
-    const getImageSrc = () => {
-    // Priority 1: Backend poster field (this is what the API returns)
-    if (movie.poster && movie.poster !== "N/A" && !movie.poster.includes('tmdb')) {
+  const getImageSrc = () => {
+    // Priority 1: Backend image proxy URL (this is what the dynamic API returns)
+    if (movie.poster && movie.poster !== "N/A") {
+      // If it's already a full backend proxy URL, use it
+      if (movie.poster.includes('/api/movies/image-proxy')) {
+        return movie.poster
+      }
+      // If it's a direct OMDB URL, create proxy URL
+      if (movie.poster.includes('m.media-amazon.com')) {
+        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+        return `${API_BASE_URL}/api/movies/image-proxy?url=${encodeURIComponent(movie.poster)}`
+      }
+      // For any other poster URL, use as is
       return movie.poster
     }
 
-    // Priority 2: OMDB poster (for mock data)
+    // Priority 2: OMDB poster (for mock data compatibility)
     if (movie.omdbPoster && movie.omdbPoster !== "N/A") {
+      if (movie.omdbPoster.includes('m.media-amazon.com')) {
+        return `http://localhost:8000/api/movies/image-proxy?url=${encodeURIComponent(movie.omdbPoster)}`
+      }
       return movie.omdbPoster
     }
     

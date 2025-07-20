@@ -10,22 +10,16 @@ import { ParticleBackground } from "./particle-background"
 export function Hero() {
   const [searchInput, setSearchInput] = useState("")
   const { setSearchQuery, searchMoviesHandler, isLoading } = useMovieContext()
-    const handleSearch = async (e: React.FormEvent) => {
+  const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault()
-    console.log('🔍 Hero: Search submitted with query:', searchInput)
-    console.log('🔍 Hero: Current backend connection status:', isLoading)
     
     if (searchInput.trim()) {
-      console.log('🔍 Hero: Setting search query and calling search handler')
       setSearchQuery(searchInput)
       try {
         await searchMoviesHandler(searchInput)
-        console.log('🔍 Hero: Search completed successfully')
       } catch (error) {
-        console.error('🔍 Hero: Search failed:', error)
+        console.error('Search failed:', error)
       }
-    } else {
-      console.log('🔍 Hero: Empty search query')
     }
   }
 

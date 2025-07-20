@@ -51,27 +51,52 @@ export function MovieGrid() {
     const loadSpecialData = async () => {
       try {
         setLoadingSpecialData(true)
+        console.log('🎬 Loading special movie data for grid...')
         
-        // Fetch trending movies
-        const trending = await movieApi.getTrendingMovies()
+        // Always try to fetch from backend first
+        let trending: Movie[] = []
+        let popular: Movie[] = []
+        
+        try {
+          console.log('📡 Fetching trending movies...')
+          trending = await movieApi.getTrendingMovies()
+          console.log(`✅ Loaded ${trending?.length || 0} trending movies`)
+        } catch (error) {
+          console.warn('⚠️ Trending movies API failed, using fallback:', error)
+          trending = movies.slice(0, 15)
+        }
+        
+        try {
+          console.log('📡 Fetching popular movies...')
+          popular = await movieApi.getPopularMovies(15)
+          console.log(`✅ Loaded ${popular?.length || 0} popular movies`)
+        } catch (error) {
+          console.warn('⚠️ Popular movies API failed, using fallback:', error)
+          popular = movies.slice(5, 20)
+        }
+        
         setTrendingMovies(trending || [])
-        
-        // Fetch popular movies  
-        const popular = await movieApi.getPopularMovies()
         setPopularMovies(popular || [])
         
         // Get top rated movies (rating > 8.0)
-        const topRated = movies.filter(m => m.rating && m.rating > 8.0).slice(0, 15)
+        const topRated = (popular.length > 0 ? popular : movies)
+          .filter(m => m.rating && m.rating > 8.0)
+          .slice(0, 15)
         setTopRatedMovies(topRated)
         
-        // Set featured movie from trending
-        if (trending && trending.length > 0) {
-          const featured = trending[0]
+        // Set featured movie from trending or popular movies
+        const featuredSource = trending.length > 0 ? trending : popular.length > 0 ? popular : movies
+        if (featuredSource.length > 0) {
+          const featured = featuredSource[0]
           setFeaturedMovie({
             id: featured.id,
             title: featured.title,
             description: featured.plot || "An amazing movie experience awaits.",
-            backdrop: featured.poster || "https://via.placeholder.com/1920x1080/1a1a1a/ffffff?text=Featured%20Movie",
+            backdrop: featured.poster && featured.poster.includes('/api/movies/image-proxy') 
+              ? featured.poster 
+              : featured.poster 
+                ? `http://localhost:8000/api/movies/image-proxy?url=${encodeURIComponent(featured.poster)}`
+                : "https://via.placeholder.com/1920x1080/1a1a1a/ffffff?text=" + encodeURIComponent(featured.title),
             rating: featured.rating || 8.0,
             year: featured.year || 2023,
             genre: featured.genre || ["Action", "Adventure"]
@@ -79,8 +104,9 @@ export function MovieGrid() {
         }
         
       } catch (error) {
-        console.error("Failed to load special data:", error)
-        // Use fallback data
+        console.error("❌ Failed to load special data:", error)
+        // Use fallback data only as last resort
+        console.log('📦 Using fallback movie data')
         setTrendingMovies(movies.slice(0, 15))
         setPopularMovies(movies.slice(5, 20))
         setTopRatedMovies(movies.filter(m => m.rating && m.rating > 7.0).slice(0, 15))
@@ -89,15 +115,16 @@ export function MovieGrid() {
       }
     }
 
-    if (!searchQuery) {
+    if (!searchQuery && movies.length > 0) {
       loadSpecialData()
     }
   }, [searchQuery, movies])
 
-  if (isLoading || (loadingSpecialData && !searchQuery)) {
+  if (isLoading && movies.length === 0) {
     return (
-      <div className="space-y-12">        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-8 px-6 lg:px-12 max-w-screen-2xl mx-auto">
-          {Array.from({ length: 8 }).map((_, index) => (
+      <div className="space-y-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-8 px-6 lg:px-12 max-w-screen-2xl mx-auto">
+          {Array.from({ length: 12 }).map((_, index) => (
             <MovieCardSkeleton key={index} />
           ))}
         </div>

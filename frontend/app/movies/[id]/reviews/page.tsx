@@ -220,7 +220,7 @@ export default function MovieReviewsPage() {
       return 'text-gray-400 bg-gray-600/20 border-gray-600/30'
     }
     
-    switch (sentiment.toLowerCase()) {
+    switch (sentiment?.toLowerCase()) {
       case 'very positive':
         return 'text-green-400 bg-green-600/20 border-green-600/30'
       case 'mostly positive':
@@ -314,11 +314,11 @@ export default function MovieReviewsPage() {
             <span>{movie_info.year}</span>
             <div className="flex items-center gap-2">
               <MessageCircle className="w-4 h-4" />
-              <span>{summary.total_discussions} Reddit Discussions</span>
+              <span>{summary?.total_discussions || 0} Reddit Discussions</span>
             </div>
             <div className="flex items-center gap-2">
               <Users className="w-4 h-4" />
-              <span>{summary.subreddits_analyzed} Subreddits</span>
+              <span>{summary?.subreddits_analyzed || 0} Subreddits</span>
             </div>
           </div>
         </div>
@@ -333,26 +333,26 @@ export default function MovieReviewsPage() {
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-4 mb-4">
-              <Badge className={getSentimentColor(summary.overall_reception)}>
-                {summary.overall_reception}
+              <Badge className={getSentimentColor(summary?.overall_reception)}>
+                {summary?.overall_reception || 'Unknown'}
               </Badge>
               <div className="text-2xl font-bold">
-                {summary.sentiment_score > 0 ? '+' : ''}{summary.sentiment_score}
+                {summary?.sentiment_score && summary.sentiment_score > 0 ? '+' : ''}{summary?.sentiment_score || 0}
               </div>
               <div className="text-gray-400">Sentiment Score</div>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               <div className="text-center">
-                <div className="text-2xl font-bold text-green-400">{summary.sentiment_breakdown.positive}%</div>
+                <div className="text-2xl font-bold text-green-400">{summary?.sentiment_breakdown?.positive || 0}%</div>
                 <div className="text-sm text-gray-400">Positive</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-yellow-400">{summary.sentiment_breakdown.neutral}%</div>
+                <div className="text-2xl font-bold text-yellow-400">{summary?.sentiment_breakdown?.neutral || 0}%</div>
                 <div className="text-sm text-gray-400">Neutral</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-red-400">{summary.sentiment_breakdown.negative}%</div>
+                <div className="text-2xl font-bold text-red-400">{summary?.sentiment_breakdown?.negative || 0}%</div>
                 <div className="text-sm text-gray-400">Negative</div>
               </div>
             </div>
@@ -360,15 +360,15 @@ export default function MovieReviewsPage() {
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <span className="text-sm text-gray-400">Positive</span>
-                <span className="text-sm text-green-400">{summary.sentiment_breakdown.positive}%</span>
+                <span className="text-sm text-green-400">{summary?.sentiment_breakdown?.positive || 0}%</span>
               </div>
-              <Progress value={summary.sentiment_breakdown.positive} className="h-2 bg-gray-800" />
+              <Progress value={summary?.sentiment_breakdown?.positive || 0} className="h-2 bg-gray-800" />
               
               <div className="flex justify-between items-center">
                 <span className="text-sm text-gray-400">Negative</span>
-                <span className="text-sm text-red-400">{summary.sentiment_breakdown.negative}%</span>
+                <span className="text-sm text-red-400">{summary?.sentiment_breakdown?.negative || 0}%</span>
               </div>
-              <Progress value={summary.sentiment_breakdown.negative} className="h-2 bg-gray-800" />
+              <Progress value={summary?.sentiment_breakdown?.negative || 0} className="h-2 bg-gray-800" />
             </div>
           </CardContent>
         </Card>
@@ -391,7 +391,7 @@ export default function MovieReviewsPage() {
                 </CardHeader>
                 <CardContent>
                   <ul className="space-y-3">
-                    {summary.key_insights.map((insight, index) => (
+                    {(summary?.key_insights || []).map((insight, index) => (
                       <li key={index} className="flex items-start gap-3">
                         <div className="w-2 h-2 bg-red-500 rounded-full mt-2 flex-shrink-0"></div>
                         <span className="text-gray-300">{insight}</span>
@@ -410,17 +410,17 @@ export default function MovieReviewsPage() {
                     <div>
                       <div className="flex justify-between items-center mb-2">
                         <span className="text-gray-400">Volume Level</span>
-                        <Badge variant="outline">{summary.discussion_volume}</Badge>
+                        <Badge variant="outline">{summary?.discussion_volume || 'Unknown'}</Badge>
                       </div>
                     </div>
                     
                     <div>
-                      <div className="text-2xl font-bold mb-1">{summary.total_discussions}</div>
+                      <div className="text-2xl font-bold mb-1">{summary?.total_discussions || 0}</div>
                       <div className="text-sm text-gray-400">Total Discussions Found</div>
                     </div>
                     
                     <div>
-                      <div className="text-2xl font-bold mb-1">{summary.subreddits_analyzed}</div>
+                      <div className="text-2xl font-bold mb-1">{summary?.subreddits_analyzed || 0}</div>
                       <div className="text-sm text-gray-400">Subreddits Analyzed</div>
                     </div>
 
@@ -708,7 +708,7 @@ export default function MovieReviewsPage() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                  {summary.top_keywords.slice(0, 20).map(([keyword, count], index) => (
+                  {(summary?.top_keywords || []).slice(0, 20).map(([keyword, count], index) => (
                     <div key={keyword} className="flex items-center justify-between p-3 bg-gray-800/50 rounded-lg">
                       <span className="font-medium truncate">{keyword}</span>
                       <Badge variant="outline" className="ml-2">{count}</Badge>

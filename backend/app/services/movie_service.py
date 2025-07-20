@@ -24,9 +24,10 @@ class MovieService:
     
     def _init_demo_data(self):
         """Initialize with demo movie data"""
-        # Initialize with fallback demo data immediately
-        self._init_original_demo_data()
-        # Optionally load from API manager later
+        # Don't initialize demo data immediately - wait for real API calls
+        # Only use demo data as absolute fallback
+        self.movies_db = []
+        self.logger.info("🚀 MovieService initialized - will load real data on first request")
     
     async def _load_initial_movies(self):
         """Load initial movies from real APIs"""
@@ -152,51 +153,49 @@ class MovieService:
         return filtered_movies[offset:offset + limit]
     
     async def search_movies(self, query: str, limit: int = 20) -> List[Movie]:
-        """🚀 ROBUST REAL-TIME SEARCH - Production Ready with Multi-Layer Fallbacks"""
+        """🚀 DYNAMIC REAL-TIME SEARCH - Always fetch fresh data for searches"""
         import time
         start_time = time.time()
         try:
-            self.logger.info(f"� FAST Search: '{query}' (limit: {limit})")
+            self.logger.info(f"🔍 DYNAMIC Search: '{query}' (limit: {limit})")
             
-            # STEP 1: Quick cache check first (fastest)
-            cache_key = f"search:{query.lower()}:{limit}"
-            cached_result = await self._check_cache(cache_key)
-            if cached_result:
-                self.logger.info(f"⚡ Cache HIT - returning {len(cached_result)} results instantly")
-                return cached_result[:limit]
-            
-            # STEP 2: Search in database first (faster than API calls)
-            db_results = await self._search_movies_in_db(query, limit)
-            if db_results:
-                movies = [self._convert_dict_to_movie(data) for data in db_results]
-                self.logger.info(f"💾 Database HIT - returning {len(movies)} results")
-                # Cache the results for next time
-                await self._cache_results(cache_key, movies)
-                return movies[:limit]
-            
-            # STEP 3: Use OMDB API directly for speed (bypass slower API manager layers)
+            # STEP 1: OMDB API first (real-time data)
             omdb_results = await self._search_omdb_direct(query, limit)
             if omdb_results:
-                self.logger.info(f"✅ OMDB returned {len(omdb_results)} results in <5s")
+                self.logger.info(f"✅ OMDB returned {len(omdb_results)} fresh results")
                 return omdb_results[:limit]
             
-            # STEP 3: Fallback to API Manager (if OMDB fails)
-            self.logger.info("🔄 OMDB timeout/failed, trying API Manager...")
+            # STEP 2: API Manager for more sources (real-time data)
+            self.logger.info("🔄 OMDB no results, trying API Manager...")
             try:
                 movie_data_list = await asyncio.wait_for(
                     self.api_manager.search_movies(query, limit),
-                    timeout=8.0  # 8 second max for full API manager
+                    timeout=8.0
                 )
                 
                 if movie_data_list:
                     movies = [self._convert_dict_to_movie(data) for data in movie_data_list]
-                    self.logger.info(f"✅ API Manager fallback: {len(movies)} movies")
+                    self.logger.info(f"✅ API Manager: {len(movies)} fresh movies")
                     return movies[:limit]
                     
             except asyncio.TimeoutError:
                 self.logger.warning("API Manager timeout after 8s")
             except Exception as e:
                 self.logger.warning(f"API Manager failed: {e}")
+            
+            # STEP 3: Quick cache check as fallback (only if APIs fail)
+            cache_key = f"search:{query.lower()}:{limit}"
+            cached_result = await self._check_cache(cache_key)
+            if cached_result:
+                self.logger.info(f"⚡ Cache FALLBACK - returning {len(cached_result)} results")
+                return cached_result[:limit]
+            
+            # STEP 4: Database search as final fallback
+            db_results = await self._search_movies_in_db(query, limit)
+            if db_results:
+                movies = [self._convert_dict_to_movie(data) for data in db_results]
+                self.logger.info(f"💾 Database FALLBACK - returning {len(movies)} results")
+                return movies[:limit]
             
             # STEP 4: Ultra-fast local search (instant results)
             self.logger.info("⚡ Ultra-fast local search as final fallback")

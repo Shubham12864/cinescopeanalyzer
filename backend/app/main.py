@@ -31,14 +31,13 @@ allowed_origins = os.getenv("ALLOWED_ORIGINS", "").split(",") if os.getenv("ALLO
     "http://localhost:3000",
     "http://localhost:3001", 
     "https://cinescopeanalyzer.vercel.app",
-    "https://cinescopeanalyzer-production.up.railway.app",
-    "*"  # Allow all for development - remove in production
+    "https://cinescopeanalyzer-production.up.railway.app"
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=False,
+    allow_origins=allowed_origins + ["*"],  # Add wildcard for development
+    allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"],
     allow_headers=["*"],
     expose_headers=["*"],

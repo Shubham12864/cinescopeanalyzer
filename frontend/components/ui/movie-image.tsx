@@ -21,8 +21,8 @@ export function MovieImage({
   className, 
   priority = false, 
   fill = false,
-  width = 300,  // Default width
-  height = 450, // Default height (movie poster ratio)
+  width = 300,
+  height = 450,
   fallbackSrc
 }: MovieImageProps) {
   // Generate fallback image with movie title
@@ -35,8 +35,8 @@ export function MovieImage({
   const [imgSrc, setImgSrc] = useState(src || defaultFallback)
   const [loading, setLoading] = useState(!!src)
   const [error, setError] = useState(false)
+  
   const handleError = () => {
-    console.error('🖼️ Image failed to load:', imgSrc)
     if (!error && imgSrc !== defaultFallback) {
       setError(true)
       setImgSrc(defaultFallback)
@@ -45,7 +45,6 @@ export function MovieImage({
   }
 
   const handleLoad = () => {
-    console.log('🖼️ Image loaded successfully:', imgSrc)
     setLoading(false)
     setError(false)
   }
@@ -53,14 +52,12 @@ export function MovieImage({
   // Update image source when src prop changes
   useEffect(() => {
     if (!src || src === 'N/A' || src.includes('placeholder')) {
-      console.log('🖼️ Using fallback for invalid src:', src)
       setImgSrc(defaultFallback)
       setLoading(false)
       setError(false)
     } else {
       // Clean the URL by removing any line breaks or whitespace
       const cleanSrc = src.replace(/\s+/g, '').trim()
-      console.log('🖼️ Setting clean image src:', cleanSrc)
       setImgSrc(cleanSrc)
       setLoading(!!cleanSrc)
       setError(false)
@@ -79,8 +76,8 @@ export function MovieImage({
         src={imgSrc}
         alt={alt}
         fill={fill}
-        width={fill ? undefined : width}
-        height={fill ? undefined : height}
+        width={!fill ? width : undefined}
+        height={!fill ? height : undefined}
         className={cn(
           "transition-opacity duration-300",
           loading ? "opacity-0" : "opacity-100",
@@ -90,13 +87,14 @@ export function MovieImage({
         onError={handleError}
         onLoad={handleLoad}
         unoptimized={imgSrc.includes('placeholder') || imgSrc.includes('via.placeholder') || imgSrc.includes('dummyimage')}
+        sizes={fill ? "(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw" : undefined}
       />
       
       {error && imgSrc === defaultFallback && (
         <div className="absolute inset-0 bg-gradient-to-br from-gray-800 to-gray-900 flex flex-col items-center justify-center text-gray-300">
           <div className="text-6xl mb-4 opacity-50">🎬</div>
           <div className="text-sm text-center px-4 font-medium">
-            {alt}
+            {alt || 'Movie'}
           </div>
         </div>
       )}

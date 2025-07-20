@@ -1,11 +1,14 @@
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import Response
+from fastapi.responses import Response, FileResponse, StreamingResponse
 from typing import List, Optional, Dict
 import asyncio
 import logging
 import random
 import traceback
 import requests
+import httpx
+import os
+from pathlib import Path
 from datetime import datetime
 from ...models.movie import Movie, Review, AnalyticsData, SentimentData, RatingDistributionData, MovieSummary
 from ...services.movie_service import MovieService
@@ -13,6 +16,12 @@ from ...services.comprehensive_movie_service_working import ComprehensiveMovieSe
 from ...services.image_cache_service import ImageCacheService
 
 router = APIRouter(prefix="/api/movies", tags=["movies"])
+
+# Initialize services and logger
+movie_service = MovieService()
+comprehensive_service = ComprehensiveMovieService()
+image_cache_service = ImageCacheService()
+logger = logging.getLogger(__name__)
 
 # Add a route for the base path without trailing slash
 @router.get("", response_model=List[Movie])
@@ -40,37 +49,43 @@ async def get_movies_no_slash(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# Initialize services
-movie_service = MovieService()
-comprehensive_service = ComprehensiveMovieService()
-image_cache_service = ImageCacheService()
-logger = logging.getLogger(__name__)
-
-async def process_movie_images(movies: List[Movie]) -> List[Movie]:
-    """Process and cache movie images, replacing original URLs with cached local URLs"""
+async def process_movie_images(movies: List[Movie], use_dynamic_loading: bool = False) -> List[Movie]:
+    """Process movie images - either dynamic loading or cached based on use_dynamic_loading flag"""
     try:
         for movie in movies:
             if movie.poster:
                 # Clean the poster URL first
                 clean_poster_url = movie.poster.replace('\n', '').replace('\r', '').replace(' ', '').strip()
                 
-                # If it's an Amazon URL, convert to proxy URL to avoid CORS issues
-                if clean_poster_url.startswith('https://m.media-amazon.com/') or clean_poster_url.startswith('https://media-amazon.com/'):
-                    proxy_url = f"/api/movies/image-proxy?url={clean_poster_url}"
-                    movie.poster = proxy_url
-                    logger.debug(f"🔄 Using proxy URL for {movie.title}: {proxy_url}")
-                else:
-                    # Try to get or cache the image for non-Amazon URLs
-                    cached_url = await image_cache_service.get_or_cache_image(
-                        clean_poster_url, 
-                        f"{movie.imdbId}_poster"
-                    )
-                    if cached_url:
-                        movie.poster = cached_url
-                        logger.debug(f"✅ Using cached image for {movie.title}: {cached_url}")
+                if use_dynamic_loading:
+                    # For dynamic loading (searches), use proxy URLs or direct URLs
+                    if clean_poster_url.startswith('https://m.media-amazon.com/') or clean_poster_url.startswith('https://media-amazon.com/'):
+                        proxy_url = f"/api/movies/image-proxy?url={clean_poster_url}"
+                        movie.poster = proxy_url
+                        logger.debug(f"🔄 Dynamic proxy URL for {movie.title}: {proxy_url}")
                     else:
+                        # For non-Amazon URLs, use direct URL for dynamic loading
                         movie.poster = clean_poster_url
-                        logger.warning(f"⚠️ Could not cache image for {movie.title}, using cleaned original URL")
+                        logger.debug(f"🔗 Dynamic direct URL for {movie.title}: {clean_poster_url}")
+                else:
+                    # For cached loading (static lists), use cached images
+                    if clean_poster_url.startswith('https://m.media-amazon.com/') or clean_poster_url.startswith('https://media-amazon.com/'):
+                        proxy_url = f"/api/movies/image-proxy?url={clean_poster_url}"
+                        movie.poster = proxy_url
+                        logger.debug(f"🔄 Using proxy URL for {movie.title}: {proxy_url}")
+                    else:
+                        # Try to get or cache the image for non-Amazon URLs
+                        cached_url = await image_cache_service.get_or_cache_image(
+                            clean_poster_url, 
+                            movie.imdbId,
+                            "poster"
+                        )
+                        if cached_url:
+                            movie.poster = cached_url
+                            logger.debug(f"✅ Using cached image for {movie.title}: {cached_url}")
+                        else:
+                            movie.poster = clean_poster_url
+                            logger.warning(f"⚠️ Could not cache image for {movie.title}, using cleaned original URL")
         return movies
     except Exception as e:
         logger.error(f"❌ Error processing movie images: {e}")
@@ -106,11 +121,12 @@ async def search_movies(
     q: str = Query(..., min_length=1),
     limit: int = Query(20, ge=1, le=100)
 ):
-    """Search movies by title, plot, or genre"""
+    """Search movies by title, plot, or genre with dynamic image loading"""
     try:
         movies = await movie_service.search_movies(query=q, limit=limit)
-        # Process and cache images
-        movies = await process_movie_images(movies)
+        # Use dynamic image loading for search results
+        movies = await process_movie_images(movies, use_dynamic_loading=True)
+        logger.info(f"🔍 Search for '{q}' returned {len(movies)} movies with dynamic images")
         return movies
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -323,24 +339,46 @@ async def get_movie_suggestions(limit: int = Query(12, ge=1, le=20)):
 
 @router.get("/top-rated", response_model=List[Movie])
 async def get_top_rated_movies(limit: int = Query(12, ge=1, le=20)):
-    """Get top rated movies"""
+    """Get top rated movies with fallback implementation"""
     try:
-        movies = await movie_service.get_top_rated_movies(limit)
-        # Process and cache images
-        movies = await process_movie_images(movies)
+        # Try to get top-rated movies from service
+        try:
+            movies = await movie_service.get_top_rated_movies(limit)
+        except AttributeError:
+            # Fallback: Get popular movies and filter by high ratings
+            logger.info("💡 Using fallback for top-rated movies (filtering popular movies)")
+            popular_movies = await get_popular_movies(limit=50)  # Get more to filter
+            movies = [m for m in popular_movies if m.rating and m.rating >= 8.0][:limit]
+        
+        # Process images (use cached since this is a curated list)
+        movies = await process_movie_images(movies, use_dynamic_loading=False)
+        logger.info(f"✅ Returning {len(movies)} top-rated movies")
         return movies
     except Exception as e:
+        logger.error(f"❌ Error getting top-rated movies: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/recent", response_model=List[Movie])
 async def get_recent_movies(limit: int = Query(12, ge=1, le=20)):
-    """Get recent movies"""
+    """Get recent movies with fallback implementation"""
     try:
-        movies = await movie_service.get_recent_movies(limit)
-        # Process and cache images
-        movies = await process_movie_images(movies)
+        # Try to get recent movies from service
+        try:
+            movies = await movie_service.get_recent_movies(limit)
+        except AttributeError:
+            # Fallback: Get popular movies and filter by recent years
+            logger.info("💡 Using fallback for recent movies (filtering by year)")
+            from datetime import datetime
+            current_year = datetime.now().year
+            popular_movies = await get_popular_movies(limit=50)  # Get more to filter
+            movies = [m for m in popular_movies if m.year and m.year >= (current_year - 3)][:limit]
+        
+        # Process images (use cached since this is a curated list)
+        movies = await process_movie_images(movies, use_dynamic_loading=False)
+        logger.info(f"✅ Returning {len(movies)} recent movies")
         return movies
     except Exception as e:
+        logger.error(f"❌ Error getting recent movies: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/popular", response_model=List[Movie]) 
@@ -574,11 +612,12 @@ async def get_popular_movies(
         movies = await process_movie_images(movies)
         
         logger.info(f"✅ Returning {len(movies)} dynamic popular movies with cached images (segment: {time_segment})")
-        return movies
-            
+        
     except Exception as e:
         logger.error(f"❌ Error getting popular movies: {e}")
         return []
+    
+    return movies
 
 @router.get("/trending", response_model=List[Movie])
 async def get_trending_movies(
@@ -1201,7 +1240,7 @@ async def get_movie_reddit_reviews(
         
         # Initialize Reddit analyzer
         try:
-            from ...services.enhanced_reddit_analyzer import EnhancedRedditAnalyzer
+            from ...services.enhanced_reddit_analyzer_new import EnhancedRedditAnalyzer
             reddit_analyzer = EnhancedRedditAnalyzer()
             
             # Perform comprehensive Reddit analysis
@@ -1478,38 +1517,35 @@ def _categorize_discussion_volume(total_posts: int) -> str:
 
 # Cached images route
 @router.get("/images/cached/{filename}")
-async def get_cached_image(filename: str):
+async def get_cached_movie_image(filename: str):
     """Serve cached movie images"""
     try:
-        from fastapi.responses import FileResponse
-        import os
+        # Define the cache directory
+        cache_dir = Path("./cache/images")
         
-        # Get the cached image path
-        cache_dir = "cache/images"
-        file_path = os.path.join(cache_dir, filename)
+        # Check different subdirectories
+        possible_paths = [
+            cache_dir / "posters" / filename,
+            cache_dir / "backdrops" / filename,
+            cache_dir / "thumbnails" / filename,
+            cache_dir / filename
+        ]
         
-        # Check if file exists
-        if not os.path.exists(file_path):
-            raise HTTPException(status_code=404, detail="Image not found")
+        for file_path in possible_paths:
+            if file_path.exists():
+                return FileResponse(
+                    path=str(file_path),
+                    headers={
+                        "Cache-Control": "public, max-age=86400",  # 24 hours
+                        "Access-Control-Allow-Origin": "*"
+                    }
+                )
         
-        # Determine the media type based on file extension
-        if filename.lower().endswith('.jpg') or filename.lower().endswith('.jpeg'):
-            media_type = "image/jpeg"
-        elif filename.lower().endswith('.png'):
-            media_type = "image/png"
-        elif filename.lower().endswith('.webp'):
-            media_type = "image/webp"
-        else:
-            media_type = "application/octet-stream"
+        raise HTTPException(status_code=404, detail="Cached image not found")
         
-        return FileResponse(
-            path=file_path,
-            media_type=media_type,
-            headers={"Cache-Control": "public, max-age=31536000"}  # Cache for 1 year
-        )
     except Exception as e:
         logger.error(f"❌ Error serving cached image {filename}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Error serving cached image: {str(e)}")
 
 # Image proxy route to avoid CORS issues
 @router.get("/image-proxy")
@@ -1559,3 +1595,45 @@ async def get_movie(movie_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/image-proxy")
+async def image_proxy(url: str):
+    """Proxy images to handle CORS and access issues"""
+    try:
+        logger.debug(f"🖼️ Proxying image request for: {url}")
+        
+        # Clean the URL
+        clean_url = url.replace('\n', '').replace('\r', '').replace(' ', '').strip()
+        
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'image/*,*/*',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Referer': 'https://www.imdb.com/',
+                'Cache-Control': 'no-cache'
+            }
+            
+            response = await client.get(clean_url, headers=headers)
+            response.raise_for_status()
+            
+            # Get content type
+            content_type = response.headers.get('content-type', 'image/jpeg')
+            
+            logger.debug(f"✅ Successfully proxied image: {url} (type: {content_type})")
+            
+            return Response(
+                content=response.content,
+                media_type=content_type,
+                headers={
+                    'Cache-Control': 'public, max-age=3600',
+                    'Access-Control-Allow-Origin': '*'
+                }
+            )
+            
+    except httpx.HTTPStatusError as e:
+        logger.error(f"❌ HTTP error proxying image {url}: {e.response.status_code}")
+        raise HTTPException(status_code=e.response.status_code, detail="Image not found")
+    except Exception as e:
+        logger.error(f"❌ Error proxying image {url}: {e}")
+        raise HTTPException(status_code=500, detail="Error loading image")

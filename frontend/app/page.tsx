@@ -8,17 +8,11 @@ import { MovieSuggestions } from "@/components/suggestions/movie-suggestions"
 import { PopularMoviesSection } from "@/components/sections/popular-movies-section"
 import { TopRatedMoviesSection } from "@/components/sections/top-rated-movies-section"
 import { RecentMoviesSection } from "@/components/sections/recent-movies-section"
-import { DebugConnection } from "@/components/debug-connection"
-import { ImageDebugTest } from "@/components/debug/image-debug-test"
-import { ApiResponseTest } from "@/components/debug/api-response-test"
-import { BasicImageTest } from "@/components/debug/basic-image-test"
-import { ProxyImageTest } from "@/components/debug/proxy-image-test"
 
 export default function HomePage() {
   return (
     <div className="flex min-h-screen bg-black">
       <Navigation />
-      <DebugConnection />
 
       <main className="flex-1 ml-0 lg:ml-64 transition-all duration-300">
         <motion.div
@@ -50,12 +44,6 @@ export default function HomePage() {
               <MovieGrid />
             </div>
           </div>
-
-          {/* Debugging Components - Uncomment to use */}
-          <ImageDebugTest />
-          <ApiResponseTest />
-          <BasicImageTest />
-          <ProxyImageTest />
         </motion.div>
       </main>
     </div>

@@ -13,7 +13,7 @@ export function PopularMoviesSection() {
   const [popularMovies, setPopularMovies] = useState<Movie[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [currentIndex, setCurrentIndex] = useState(0)
-  const { setSelectedMovie, isBackendConnected } = useMovieContext()
+  const { setSelectedMovie, isBackendConnected, movies } = useMovieContext()
   const router = useRouter()
 
   useEffect(() => {
@@ -23,15 +23,33 @@ export function PopularMoviesSection() {
   const loadPopularMovies = async () => {
     try {
       setIsLoading(true)
+      console.log('🎬 Loading popular movies section...')
       
+      // First try to get dedicated popular movies from API
       if (isBackendConnected) {
-        const movies = await movieApi.getPopularMovies(12)
-        if (movies && movies.length > 0) {
-          setPopularMovies(movies)
+        try {
+          console.log('📡 Fetching popular movies from backend...')
+          const movies = await movieApi.getPopularMovies(12)
+          if (movies && movies.length > 0) {
+            console.log(`✅ Popular movies section loaded ${movies.length} movies`)
+            setPopularMovies(movies)
+          } else {
+            console.log('⚠️ No popular movies returned, falling back to context movies')
+            // Fallback to movies from context if available
+            setPopularMovies(movies.slice(0, 12))
+          }
+        } catch (error) {
+          console.warn('⚠️ Popular movies API failed, using context movies:', error)
+          // Use movies from context as fallback
+          setPopularMovies(movies.slice(0, 12))
         }
+      } else {
+        console.log('⚠️ Backend not connected, using context movies for popular section')
+        // Use movies from context
+        setPopularMovies(movies.slice(0, 12))
       }
     } catch (error) {
-      console.error('Error loading popular movies:', error)
+      console.error('❌ Error in popular movies section:', error)
     } finally {
       setIsLoading(false)
     }
@@ -121,7 +139,19 @@ export function PopularMoviesSection() {
           >
             <div className="relative aspect-[2/3] rounded-lg overflow-hidden bg-gray-800">
               <MovieImage
-                src={movie.poster}
+                src={(() => {
+                  // Ensure proper image proxy handling for popular movies
+                  if (movie.poster && movie.poster !== "N/A") {
+                    if (movie.poster.includes('/api/movies/image-proxy') || movie.poster.startsWith('http://localhost:8000/api/movies/image-proxy')) {
+                      return movie.poster
+                    }
+                    if (movie.poster.includes('m.media-amazon.com')) {
+                      return `http://localhost:8000/api/movies/image-proxy?url=${encodeURIComponent(movie.poster)}`
+                    }
+                    return movie.poster
+                  }
+                  return movie.omdbPoster || null
+                })()}
                 alt={movie.title}
                 fill
                 className="object-cover transition-transform duration-300 group-hover:scale-105"
