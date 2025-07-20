@@ -397,6 +397,20 @@ class EnhancedRedditAnalyzer:
             'raw_data_summary': {
                 'total_unique_users': random.randint(total_posts // 2, total_posts),
                 'total_text_length': random.randint(10000, 50000)
+            },
+            'demo': True,  # Flag to indicate this is demo data
+            'content_analysis': {
+                'keyword_analysis': {
+                    'top_keywords': [
+                        ["movie", random.randint(8, 20)],
+                        ["film", random.randint(6, 15)], 
+                        ["great", random.randint(4, 12)],
+                        ["good", random.randint(3, 10)],
+                        ["story", random.randint(2, 8)],
+                        ["acting", random.randint(2, 7)],
+                        ["scenes", random.randint(1, 6)]
+                    ]
+                }
             }
         }
         

@@ -1253,38 +1253,93 @@ async def get_movie_reddit_reviews(
                 limit_per_subreddit=limit
             )
             
+            # Generate proper summary from the reddit analysis
+            summary = _create_frontend_summary(reddit_analysis)
+            
+            
         except Exception as reddit_error:
             logger.warning(f"⚠️ Reddit analysis failed, using demo data: {reddit_error}")
-            # Create demo Reddit analysis data
+            # Create comprehensive demo Reddit analysis data that matches frontend expectations
+            import random
+            
+            # Generate realistic demo data
+            total_posts = random.randint(25, 75)
+            positive_posts = int(total_posts * random.uniform(0.4, 0.7))
+            negative_posts = int(total_posts * random.uniform(0.1, 0.25))
+            neutral_posts = total_posts - positive_posts - negative_posts
+            
             reddit_analysis = {
                 "collection_summary": {
-                    "total_posts": 15,
-                    "total_subreddits": 3,
-                    "total_comments": 45,
-                    "avg_posts_per_subreddit": 5.0
+                    "total_posts": total_posts,
+                    "total_subreddits": random.randint(3, 8),
+                    "date_range": {
+                        "earliest": "2024-01-15",
+                        "latest": "2024-07-20",
+                        "span_days": random.randint(90, 180)
+                    }
                 },
                 "sentiment_analysis": {
-                    "distribution": {
-                        "positive": 9,
-                        "negative": 3,
-                        "neutral": 3
+                    "overall_sentiment": {
+                        "mean": random.uniform(0.1, 0.6),
+                        "median": random.uniform(0.1, 0.5),
+                        "std": random.uniform(0.3, 0.6)
                     },
-                    "average_sentiment": 0.6
-                },
-                "subreddit_breakdown": {
-                    "r/movies": {"posts": 6, "avg_sentiment": 0.7},
-                    "r/MovieReviews": {"posts": 5, "avg_sentiment": 0.5},
-                    "r/film": {"posts": 4, "avg_sentiment": 0.8}
-                },
-                "top_posts": [
-                    {
-                        "title": f"Great movie: {movie.title}",
-                        "score": 15,
-                        "sentiment": "positive",
-                        "subreddit": "r/movies"
+                    "distribution": {
+                        "very_positive": int(positive_posts * 0.6),
+                        "positive": int(positive_posts * 0.4),
+                        "neutral": neutral_posts,
+                        "negative": int(negative_posts * 0.7),
+                        "very_negative": int(negative_posts * 0.3)
                     }
-                ]
+                },
+                "content_analysis": {
+                    "keyword_analysis": {
+                        "top_keywords": [
+                            ["movie", random.randint(10, 25)],
+                            ["film", random.randint(8, 20)],
+                            ["great", random.randint(5, 15)],
+                            ["acting", random.randint(4, 12)],
+                            ["story", random.randint(3, 10)]
+                        ]
+                    }
+                },
+                "temporal_analysis": {
+                    "peak_discussion_periods": [
+                        {
+                            "date": "2024-03-15",
+                            "post_count": random.randint(8, 15),
+                            "avg_sentiment": random.uniform(0.2, 0.7)
+                        }
+                    ]
+                }
             }
+        
+        # Generate summary data that matches frontend expectations
+        summary = {
+            "overall_reception": "Mixed to Positive" if reddit_analysis.get("sentiment_analysis", {}).get("overall_sentiment", {}).get("mean", 0) > 0.3 else "Mixed",
+            "sentiment_score": round(reddit_analysis.get("sentiment_analysis", {}).get("overall_sentiment", {}).get("mean", 0), 2),
+            "total_discussions": reddit_analysis.get("collection_summary", {}).get("total_posts", 0),
+            "subreddits_analyzed": reddit_analysis.get("collection_summary", {}).get("total_subreddits", 0),
+            "sentiment_breakdown": {
+                "positive": round(((reddit_analysis.get("sentiment_analysis", {}).get("distribution", {}).get("very_positive", 0) + 
+                                  reddit_analysis.get("sentiment_analysis", {}).get("distribution", {}).get("positive", 0)) / 
+                                 max(reddit_analysis.get("collection_summary", {}).get("total_posts", 1), 1)) * 100),
+                "negative": round(((reddit_analysis.get("sentiment_analysis", {}).get("distribution", {}).get("very_negative", 0) + 
+                                  reddit_analysis.get("sentiment_analysis", {}).get("distribution", {}).get("negative", 0)) / 
+                                 max(reddit_analysis.get("collection_summary", {}).get("total_posts", 1), 1)) * 100),
+                "neutral": round((reddit_analysis.get("sentiment_analysis", {}).get("distribution", {}).get("neutral", 0) / 
+                                max(reddit_analysis.get("collection_summary", {}).get("total_posts", 1), 1)) * 100)
+            },
+            "key_insights": [
+                "Demo data - Reddit analysis requires API credentials",
+                f"Found {reddit_analysis.get('collection_summary', {}).get('total_posts', 0)} relevant discussions",
+                f"Analysis covers {reddit_analysis.get('collection_summary', {}).get('total_subreddits', 0)} movie-related subreddits",
+                "Community sentiment appears positive overall",
+                "Peak discussion periods align with release dates"
+            ],
+            "discussion_volume": "Medium" if reddit_analysis.get("collection_summary", {}).get("total_posts", 0) > 30 else "Low",
+            "top_keywords": reddit_analysis.get("content_analysis", {}).get("keyword_analysis", {}).get("top_keywords", [])
+        }
         
         # Format response for frontend
         response_data = {
@@ -1295,7 +1350,7 @@ async def get_movie_reddit_reviews(
                 "imdb_id": movie.imdbId
             },
             "reddit_analysis": reddit_analysis,
-            "summary": _generate_reddit_summary(reddit_analysis),
+            "summary": summary,
             "generated_at": datetime.now().isoformat()
         }
         
@@ -1637,3 +1692,106 @@ async def image_proxy(url: str):
     except Exception as e:
         logger.error(f"❌ Error proxying image {url}: {e}")
         raise HTTPException(status_code=500, detail="Error loading image")
+
+def _create_frontend_summary(reddit_analysis: Dict) -> Dict:
+    """Convert Reddit analyzer output to frontend-compatible summary format"""
+    try:
+        # Extract data from the Reddit analysis structure
+        collection_summary = reddit_analysis.get("collection_summary", {})
+        sentiment_analysis = reddit_analysis.get("sentiment_analysis", {})
+        content_analysis = reddit_analysis.get("content_analysis", {})
+        temporal_analysis = reddit_analysis.get("temporal_analysis", {})
+        
+        total_posts = collection_summary.get("total_posts", 0)
+        sentiment_dist = sentiment_analysis.get("distribution", {})
+        overall_sentiment = sentiment_analysis.get("overall_sentiment", {})
+        
+        # Calculate percentages
+        positive_pct = 0
+        negative_pct = 0
+        neutral_pct = 0
+        
+        if total_posts > 0:
+            very_positive = sentiment_dist.get("very_positive", 0)
+            positive = sentiment_dist.get("positive", 0)
+            very_negative = sentiment_dist.get("very_negative", 0)
+            negative = sentiment_dist.get("negative", 0)
+            neutral = sentiment_dist.get("neutral", 0)
+            
+            positive_pct = round(((very_positive + positive) / total_posts) * 100)
+            negative_pct = round(((very_negative + negative) / total_posts) * 100)
+            neutral_pct = round((neutral / total_posts) * 100)
+        
+        # Determine overall reception
+        mean_sentiment = overall_sentiment.get("mean", 0)
+        if mean_sentiment > 0.4:
+            reception = "Very Positive"
+        elif mean_sentiment > 0.1:
+            reception = "Mixed to Positive"
+        elif mean_sentiment > -0.1:
+            reception = "Mixed"
+        elif mean_sentiment > -0.4:
+            reception = "Mixed to Negative"
+        else:
+            reception = "Negative"
+        
+        # Extract keywords
+        keywords = content_analysis.get("keyword_analysis", {}).get("top_keywords", [])
+        
+        # Generate insights
+        insights = []
+        if reddit_analysis.get("demo", False):
+            insights.append("Demo data - Reddit analysis requires API credentials")
+        
+        if total_posts > 50:
+            insights.append(f"High community engagement with {total_posts} discussions")
+        elif total_posts > 20:
+            insights.append(f"Moderate community interest with {total_posts} discussions")
+        else:
+            insights.append("Limited community discussion found")
+            
+        if positive_pct > 60:
+            insights.append("Community reception is overwhelmingly positive")
+        elif negative_pct > 40:
+            insights.append("Community shows significant concerns")
+        else:
+            insights.append("Community opinions are mixed")
+            
+        insights.append(f"Analysis covers {collection_summary.get('total_subreddits', 0)} movie-related subreddits")
+        
+        # Determine discussion volume
+        if total_posts > 75:
+            volume = "High"
+        elif total_posts > 30:
+            volume = "Medium"
+        else:
+            volume = "Low"
+        
+        return {
+            "overall_reception": reception,
+            "sentiment_score": round(mean_sentiment, 2),
+            "total_discussions": total_posts,
+            "subreddits_analyzed": collection_summary.get("total_subreddits", 0),
+            "sentiment_breakdown": {
+                "positive": positive_pct,
+                "negative": negative_pct,
+                "neutral": neutral_pct
+            },
+            "key_insights": insights[:5],
+            "discussion_volume": volume,
+            "top_keywords": keywords[:10] if keywords else []
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error creating frontend summary: {e}")
+        # Return default summary if conversion fails
+        return {
+            "overall_reception": "Unknown",
+            "sentiment_score": 0,
+            "total_discussions": 0,
+            "subreddits_analyzed": 0,
+            "sentiment_breakdown": {"positive": 0, "negative": 0, "neutral": 0},
+            "key_insights": ["Error processing Reddit analysis"],
+            "discussion_volume": "Unknown",
+            "top_keywords": []
+        }
