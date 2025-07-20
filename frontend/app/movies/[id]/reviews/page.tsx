@@ -646,6 +646,154 @@ export default function MovieReviewsPage() {
             )}
           </TabsContent>
 
+          {/* Discussions Tab */}
+          <TabsContent value="discussions">
+            {redditAnalysis.reddit_analysis?.detailed_discussions?.high_engagement_posts ? (
+              <div className="space-y-6">
+                <Card className="bg-gray-900/50 border-gray-800">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <TrendingUp className="w-5 h-5 text-red-500" />
+                      Community Discussions
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-6">
+                      {redditAnalysis.reddit_analysis.detailed_discussions.high_engagement_posts.slice(0, 10).map((post, index) => (
+                        <motion.div
+                          key={post.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ delay: index * 0.1 }}
+                          className="border border-gray-700 rounded-lg p-4 bg-gray-800/30 hover:bg-gray-800/50 transition-colors"
+                        >
+                          <div className="flex items-start justify-between gap-4 mb-3">
+                            <div className="flex-1">
+                              <h4 className="font-semibold text-lg mb-2 leading-tight">
+                                {post.title}
+                              </h4>
+                              <div className="flex items-center gap-4 text-sm text-gray-400 mb-3">
+                                <Badge variant="outline" className="text-red-400 border-red-400">
+                                  r/{post.subreddit}
+                                </Badge>
+                                <span className="flex items-center gap-1">
+                                  <ThumbsUp className="w-3 h-3" />
+                                  {post.score.toLocaleString()}
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <MessageCircle className="w-3 h-3" />
+                                  {post.num_comments}
+                                </span>
+                                <span>by u/{post.author}</span>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-sm text-gray-400">
+                                {formatDate(post.created_utc)}
+                              </div>
+                              <div className="text-xs text-green-400">
+                                {Math.round((post.upvote_ratio || 0.75) * 100)}% upvoted
+                              </div>
+                            </div>
+                          </div>
+                          
+                          {post.selftext && (
+                            <div className="text-gray-300 mb-4 leading-relaxed">
+                              {post.selftext}
+                            </div>
+                          )}
+                          
+                          {/* Top Comments */}
+                          {post.comments && post.comments.length > 0 && (
+                            <div className="space-y-3">
+                              <div className="text-sm font-semibold text-gray-400 border-t border-gray-700 pt-3">
+                                Top Comments:
+                              </div>
+                              {post.comments.slice(0, 3).map((comment) => (
+                                <div key={comment.id} className="bg-gray-700/30 rounded-md p-3 ml-4">
+                                  <div className="flex items-center justify-between mb-2">
+                                    <span className="text-sm font-medium text-gray-300">u/{comment.author}</span>
+                                    <span className="flex items-center gap-1 text-xs text-gray-400">
+                                      <ThumbsUp className="w-3 h-3" />
+                                      {comment.score}
+                                    </span>
+                                  </div>
+                                  <div className="text-sm text-gray-300 leading-relaxed">
+                                    {comment.body}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </motion.div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : (
+              // Fallback content if detailed discussions are not available
+              <Card className="bg-gray-900/50 border-gray-800">
+                <CardHeader>
+                  <CardTitle>Community Discussions Analysis</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="text-center p-4 bg-gray-800/50 rounded-lg">
+                      <div className="text-2xl font-bold text-blue-400 mb-2">
+                        {redditAnalysis.reddit_analysis.collection_summary.total_posts}
+                      </div>
+                      <div className="text-sm text-gray-400">Total Posts</div>
+                    </div>
+                    
+                    <div className="text-center p-4 bg-gray-800/50 rounded-lg">
+                      <div className="text-2xl font-bold text-green-400 mb-2">
+                        {redditAnalysis.reddit_analysis.collection_summary.total_subreddits}
+                      </div>
+                      <div className="text-sm text-gray-400">Subreddits</div>
+                    </div>
+                    
+                    <div className="text-center p-4 bg-gray-800/50 rounded-lg">
+                      <div className="text-2xl font-bold text-purple-400 mb-2">
+                        {redditAnalysis.reddit_analysis.collection_summary.date_range?.span_days || 'N/A'}
+                      </div>
+                      <div className="text-sm text-gray-400">Days Analyzed</div>
+                    </div>
+                  </div>
+
+                  {redditAnalysis.reddit_analysis.collection_summary.date_range && (
+                    <div className="mt-6 p-4 bg-gray-800/30 rounded-lg">
+                      <h4 className="font-semibold mb-2 flex items-center gap-2">
+                        <Calendar className="w-4 h-4" />
+                        Discussion Timeline
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                        <div>
+                          <span className="text-gray-400">First Discussion:</span>
+                          <div className="font-semibold">
+                            {formatDate(redditAnalysis.reddit_analysis.collection_summary.date_range.earliest)}
+                          </div>
+                        </div>
+                        <div>
+                          <span className="text-gray-400">Latest Discussion:</span>
+                          <div className="font-semibold">
+                            {formatDate(redditAnalysis.reddit_analysis.collection_summary.date_range.latest)}
+                          </div>
+                        </div>
+                        <div>
+                          <span className="text-gray-400">Discussion Span:</span>
+                          <div className="font-semibold">
+                            {redditAnalysis.reddit_analysis.collection_summary.date_range.span_days} days
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
           {/* Trends Tab */}
           <TabsContent value="trends">
             <Card className="bg-gray-900/50 border-gray-800">

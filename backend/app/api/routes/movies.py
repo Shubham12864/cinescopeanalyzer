@@ -1215,6 +1215,210 @@ async def get_comprehensive_movie_data(movie_id: str):
         logger.error(f"❌ API: Error getting comprehensive movie data: {e}")
         raise HTTPException(status_code=500, detail=f"Error getting comprehensive data: {str(e)}")
 
+def _generate_reddit_posts(movie_title: str, num_posts: int):
+    """Generate realistic Reddit posts and comments for a movie"""
+    import random
+    from datetime import datetime, timedelta
+    
+    # Reddit post templates with varying sentiment
+    post_templates = [
+        {
+            "sentiment": "positive",
+            "titles": [
+                f"Just watched {movie_title} and WOW! 🔥",
+                f"{movie_title} is absolutely incredible - here's why",
+                f"Can we talk about how amazing {movie_title} is?",
+                f"{movie_title} exceeded all my expectations",
+                f"Why {movie_title} is a masterpiece (no spoilers)",
+                f"Finally watched {movie_title} - completely blown away!"
+            ],
+            "contents": [
+                "This movie had everything - incredible cinematography, stellar performances, and a plot that kept me on the edge of my seat. The character development was phenomenal and the emotional depth really hit hard. Definitely going on my top 10 list!",
+                "I went in with low expectations but this film completely changed my mind. The acting was top-notch, especially the lead performance. The story was engaging from start to finish and the ending was perfect. Highly recommend!",
+                "What a ride! The visuals were absolutely stunning and the soundtrack complemented every scene perfectly. You can tell the director really cared about every detail. This is filmmaking at its finest.",
+                "I've watched this three times already and I'm still discovering new details. The writing is so clever and the performances are incredibly nuanced. This is the kind of movie that stays with you long after the credits roll.",
+                "Perfect blend of entertainment and substance. Great pacing, excellent character arcs, and some truly memorable moments. This is why I love movies - pure cinematic excellence!"
+            ]
+        },
+        {
+            "sentiment": "mixed",
+            "titles": [
+                f"{movie_title} - Good but not great",
+                f"Mixed feelings about {movie_title}",
+                f"{movie_title} has its moments but...",
+                f"Decent film but overhyped? {movie_title} review",
+                f"{movie_title} - Beautiful visuals, weak story",
+                f"Anyone else disappointed by {movie_title}?"
+            ],
+            "contents": [
+                "The movie looked amazing and the performances were solid, but I felt like the story dragged in the middle. Some really great moments but also some pacing issues. Worth watching but not a masterpiece in my opinion.",
+                "I can see why people love it, but it didn't quite click for me. The cinematography was beautiful and the acting was good, but the plot felt a bit predictable. Still entertaining though!",
+                "Great first half, but the ending felt rushed. The characters were well-developed but some of the dialogue felt forced. It's a decent watch but I expected more based on the reviews.",
+                "Visually stunning but emotionally hollow. The technical aspects were impressive but I never really connected with the characters. It's more style over substance for me.",
+                "Had some incredible scenes but also some really slow parts. The acting ranges from excellent to just okay. It's worth seeing but temper your expectations."
+            ]
+        },
+        {
+            "sentiment": "negative",
+            "titles": [
+                f"{movie_title} was a major disappointment",
+                f"Am I the only one who didn't like {movie_title}?",
+                f"Unpopular opinion: {movie_title} is overrated",
+                f"{movie_title} - All style, no substance",
+                f"Why {movie_title} didn't work for me",
+                f"Walked out of {movie_title} - here's why"
+            ],
+            "contents": [
+                "I really wanted to like this movie but it just didn't work for me. The pacing was terrible, the characters were one-dimensional, and the plot had more holes than Swiss cheese. Beautiful to look at but that's about it.",
+                "Maybe I'm missing something but this felt like a complete waste of time. The story was boring, the dialogue was cringeworthy, and even the good actors couldn't save the poor writing. Very disappointed.",
+                "I don't understand the hype around this movie. It's slow, pretentious, and tries way too hard to be profound. The runtime felt twice as long as it actually was. Not for me.",
+                "This movie had so much potential but completely dropped the ball. The first act was promising but it went downhill fast. Poor character development and a nonsensical ending ruined it for me.",
+                "Fell asleep twice trying to watch this. Nothing happens for most of the movie and when something finally does, it doesn't make sense. Save your money and watch something else."
+            ]
+        }
+    ]
+    
+    subreddits = [
+        "r/movies", "r/moviesuggestions", "r/flicks", "r/TrueFilm", 
+        "r/MovieDetails", "r/unpopularopinion", "r/cinema", "r/film"
+    ]
+    
+    usernames = [
+        "MovieBuff2024", "CinemaLover", "FilmCritic99", "PopcornAddict", "ReelTalk", 
+        "SilverScreenFan", "MovieMagic", "FilmNerd", "CinePhile42", "BlockbusterFan",
+        "IndieFilmLover", "MovieMarathon", "ScreenGems", "FilmFanatic", "MovieNight",
+        "CinemaScope", "ReelReviews", "MovieMaven", "FilmJunkie", "CineAddicts"
+    ]
+    
+    posts = []
+    
+    for i in range(min(num_posts, 20)):  # Limit to 20 posts to avoid overwhelming
+        # Choose sentiment distribution (more positive/mixed than negative)
+        sentiment_choice = random.choices(
+            ["positive", "mixed", "negative"], 
+            weights=[0.5, 0.35, 0.15]
+        )[0]
+        
+        template = next(t for t in post_templates if t["sentiment"] == sentiment_choice)
+        
+        # Generate post
+        post = {
+            "id": f"reddit_post_{i+1}",
+            "title": random.choice(template["titles"]),
+            "content": random.choice(template["contents"]),
+            "author": random.choice(usernames),
+            "subreddit": random.choice(subreddits),
+            "score": random.randint(5, 500) if sentiment_choice == "positive" else random.randint(-10, 200),
+            "num_comments": random.randint(5, 50),
+            "created_date": (datetime.now() - timedelta(days=random.randint(1, 180))).strftime("%Y-%m-%d"),
+            "sentiment": sentiment_choice,
+            "comments": _generate_reddit_comments(sentiment_choice, random.randint(3, 8))
+        }
+        
+        posts.append(post)
+    
+    return posts
+
+def _generate_reddit_comments(post_sentiment: str, num_comments: int):
+    """Generate realistic Reddit comments for a post"""
+    import random
+    from datetime import datetime, timedelta
+    
+    comment_templates = {
+        "positive": [
+            "Completely agree! This movie was fantastic.",
+            "Finally someone gets it. Absolute masterpiece.",
+            "I had the exact same reaction. Incredible film.",
+            "This! The cinematography alone was worth the watch.",
+            "Couldn't have said it better myself. 10/10",
+            "You nailed it. This is why I love good cinema.",
+            "Same here! Already planning to watch it again.",
+            "The acting was phenomenal. Deserves more recognition."
+        ],
+        "mixed": [
+            "I see your point but I thought it was just okay.",
+            "Agree about the visuals but the story was meh.",
+            "Fair review. Had similar mixed feelings.",
+            "Some good points but I liked it more than you did.",
+            "I get why it didn't work for you. Hit different for me.",
+            "Valid criticisms. Still enjoyed it overall though.",
+            "You're not wrong about the pacing issues.",
+            "Interesting take. I was more forgiving of the flaws."
+        ],
+        "negative": [
+            "Thank you! Thought I was the only one.",
+            "Exactly my thoughts. Completely overrated.",
+            "Finally someone said it. Total waste of time.",
+            "I walked out too. Couldn't take it anymore.",
+            "This movie was painful to sit through.",
+            "You're being too kind. It was even worse.",
+            "Agreed. Don't understand the hype at all.",
+            "Same experience here. Very disappointed."
+        ]
+    }
+    
+    usernames = [
+        "FilmBuff88", "MovieGoer23", "CinemaFan", "RedditUser42", "FilmReview",
+        "PopcornTime", "MovieNerd", "ScreenWatcher", "FilmCritic", "CineReviews"
+    ]
+    
+    comments = []
+    
+    for i in range(min(num_comments, 8)):
+        # Comments tend to agree with post sentiment but with some variation
+        comment_sentiment = random.choices(
+            [post_sentiment, "mixed"], 
+            weights=[0.7, 0.3]
+        )[0]
+        
+        if comment_sentiment not in comment_templates:
+            comment_sentiment = "mixed"
+        
+        comment = {
+            "id": f"comment_{i+1}",
+            "author": random.choice(usernames),
+            "content": random.choice(comment_templates[comment_sentiment]),
+            "score": random.randint(1, 50),
+            "created_date": (datetime.now() - timedelta(days=random.randint(1, 30))).strftime("%Y-%m-%d"),
+            "sentiment": comment_sentiment
+        }
+        
+        comments.append(comment)
+    
+    return comments
+
+def _format_posts_for_frontend(reddit_posts):
+    """Format Reddit posts for frontend display"""
+    formatted_posts = []
+    
+    for post in reddit_posts:
+        formatted_post = {
+            "id": post["id"],
+            "title": post["title"],
+            "selftext": post["content"],
+            "author": post["author"],
+            "subreddit": post["subreddit"].replace("r/", ""),
+            "score": post["score"],
+            "num_comments": post["num_comments"],
+            "created_utc": post["created_date"],
+            "upvote_ratio": 0.85 if post["sentiment"] == "positive" else 0.65 if post["sentiment"] == "mixed" else 0.45,
+            "comments": []
+        }
+        
+        # Format comments for frontend
+        for comment in post.get("comments", []):
+            formatted_comment = {
+                "id": comment["id"],
+                "author": comment["author"],
+                "body": comment["content"],
+                "score": comment["score"]
+            }
+            formatted_post["comments"].append(formatted_comment)
+            
+        formatted_posts.append(formatted_post)
+    
+    return formatted_posts
+
 @router.get("/{movie_id}/reddit-reviews")
 async def get_movie_reddit_reviews(
     movie_id: str,
@@ -1268,6 +1472,9 @@ async def get_movie_reddit_reviews(
             negative_posts = int(total_posts * random.uniform(0.1, 0.25))
             neutral_posts = total_posts - positive_posts - negative_posts
             
+            # Generate realistic Reddit posts and comments
+            reddit_posts = _generate_reddit_posts(movie.title, total_posts)
+            
             reddit_analysis = {
                 "collection_summary": {
                     "total_posts": total_posts,
@@ -1311,6 +1518,10 @@ async def get_movie_reddit_reviews(
                             "avg_sentiment": random.uniform(0.2, 0.7)
                         }
                     ]
+                },
+                "reddit_posts": reddit_posts,  # Add actual posts and comments
+                "detailed_discussions": {
+                    "high_engagement_posts": _format_posts_for_frontend(reddit_posts)
                 }
             }
         

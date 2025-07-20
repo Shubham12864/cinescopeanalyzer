@@ -16,6 +16,7 @@ interface MovieCardProps {
 export function MovieCard({ movie }: MovieCardProps) {
   const router = useRouter()
   const { setSelectedMovie, analyzeMovie, isBackendConnected } = useMovieContext()
+  
   const getImageSrc = () => {
     // Priority 1: Backend image proxy URL (this is what the dynamic API returns)
     if (movie.poster && movie.poster !== "N/A") {
@@ -53,25 +54,54 @@ export function MovieCard({ movie }: MovieCardProps) {
     // No valid poster found - use fallback
     return null
   }
-  const handleViewDetails = () => {
+  
+  // Memoize expensive calculations
+  const processedPlot = React.useMemo(() => {
+    const plot = movie.plot || '';
+    if (!plot || plot === 'No plot available.' || plot === 'N/A') {
+      return `Discover the story of ${movie.title}, a captivating ${movie.genre?.[0]?.toLowerCase() || 'movie'} from ${movie.year}.`;
+    }
+    
+    // Smart truncation that doesn't cut words
+    if (plot.length > 140) {
+      const truncated = plot.slice(0, 140);
+      const lastSpace = truncated.lastIndexOf(' ');
+      return lastSpace > 100 ? `${truncated.slice(0, lastSpace)}...` : `${truncated}...`;
+    }
+    
+    return plot;
+  }, [movie.plot, movie.title, movie.genre, movie.year])
+
+  const imageSrc = React.useMemo(() => getImageSrc(), [movie.poster, movie.omdbPoster, movie.scrapedPoster, movie.imdbPoster])
+  const handleViewDetails = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
     setSelectedMovie(movie)
     router.push(`/movies/${movie.id}`)
   }
 
+  const handleCardClick = (e: React.MouseEvent) => {
+    // Only handle clicks on the card itself, not on buttons
+    if ((e.target as HTMLElement).closest('button')) {
+      return
+    }
+    handleViewDetails(e)
+  }
+
   return (    <div
-      className="bg-gray-900/80 backdrop-blur-sm rounded-2xl overflow-hidden cursor-pointer group relative border border-gray-800 hover:border-red-500/50 transition-all duration-300 hover:scale-105 hover:-translate-y-2 flex flex-col h-full"
-      onClick={handleViewDetails}
+      className="bg-gray-900/80 backdrop-blur-sm rounded-2xl overflow-hidden cursor-pointer group relative border border-gray-800 hover:border-red-500/50 transition-colors duration-200 flex flex-col h-full"
+      onClick={handleCardClick}
     >
       <div className="relative aspect-[3/4] overflow-hidden">
         <MovieImage
-          src={getImageSrc()}
+          src={imageSrc}
           alt={movie.title}
           fill
-          className="object-cover transition-transform duration-500 group-hover:scale-110"
+          className="object-cover transition-transform duration-300 group-hover:scale-105"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
           {/* Action Buttons Overlay */}
-        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300">
+        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
           <Button 
             size="sm" 
             variant="secondary" 
@@ -79,7 +109,7 @@ export function MovieCard({ movie }: MovieCardProps) {
             onClick={handleViewDetails}
           >
             <Info className="w-4 h-4 mr-2" />
-            View Details
+            Details
           </Button>
         </div>
 
@@ -121,27 +151,13 @@ export function MovieCard({ movie }: MovieCardProps) {
             </span>
           )}
         </div>        <p className="text-gray-300 text-sm leading-relaxed mb-6 flex-grow line-clamp-3 text-justify">
-          {(() => {
-            const plot = movie.plot || '';
-            if (!plot || plot === 'No plot available.' || plot === 'N/A') {
-              return `Discover the story of ${movie.title}, a captivating ${movie.genre?.[0]?.toLowerCase() || 'movie'} from ${movie.year}.`;
-            }
-            
-            // Smart truncation that doesn't cut words
-            if (plot.length > 140) {
-              const truncated = plot.slice(0, 140);
-              const lastSpace = truncated.lastIndexOf(' ');
-              return lastSpace > 100 ? `${truncated.slice(0, lastSpace)}...` : `${truncated}...`;
-            }
-            
-            return plot;
-          })()}
+          {processedPlot}
         </p>
 
         <div className="mt-auto">
           <Button 
             size="sm" 
-            className="w-full bg-red-600 hover:bg-red-700 text-white font-medium transition-all duration-200" 
+            className="w-full bg-red-600 hover:bg-red-700 text-white font-medium transition-colors duration-150" 
             onClick={handleViewDetails}
           >
             <Info className="w-4 h-4 mr-2" />

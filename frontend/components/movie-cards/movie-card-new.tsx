@@ -20,34 +20,31 @@ export function MovieCard({ movie }: MovieCardProps) {
   const getImageSrc = () => {
     // Priority 1: OMDB poster (highest priority)
     if (movie.omdbPoster && movie.omdbPoster !== "N/A") {
-      console.log('Using OMDB poster:', movie.omdbPoster)
       return movie.omdbPoster
     }
     
     // Priority 2: Direct poster field if it's a valid OMDB/IMDB URL
     if (movie.poster && movie.poster !== "N/A" && movie.poster.includes("media-amazon")) {
-      console.log('Using Amazon media poster:', movie.poster)
       return movie.poster
     }
     
     // Priority 3: Scraped poster 
     if (movie.scrapedPoster && movie.scrapedPoster !== "N/A") {
-      console.log('Using scraped poster:', movie.scrapedPoster)
       return movie.scrapedPoster
     }
     
     // Priority 4: IMDB poster
     if (movie.imdbPoster && movie.imdbPoster !== "N/A") {
-      console.log('Using IMDB poster:', movie.imdbPoster)
       return movie.imdbPoster
     }
 
     // Skip TMDB URLs and any other cases - use fallback
-    console.log('No valid poster found, using fallback for:', movie.title)
     return null
   }
 
-  const handleViewDetails = () => {
+  const handleViewDetails = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
     setSelectedMovie(movie)
     router.push(`/movies/${movie.id}`)
   }
@@ -64,7 +61,7 @@ export function MovieCard({ movie }: MovieCardProps) {
 
   return (
     <div
-      className="bg-gray-900/80 backdrop-blur-sm rounded-2xl overflow-hidden cursor-pointer group relative border border-gray-800 hover:border-red-500/50 transition-all duration-300 hover:scale-105 hover:-translate-y-2"
+      className="bg-gray-900/80 backdrop-blur-sm rounded-2xl overflow-hidden cursor-pointer group relative border border-gray-800 hover:border-red-500/50 transition-colors duration-200"
       onClick={handleViewDetails}
     >
       <div className="relative aspect-[3/4] overflow-hidden">
