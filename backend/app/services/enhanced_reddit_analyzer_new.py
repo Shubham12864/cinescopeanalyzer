@@ -28,10 +28,8 @@ class EnhancedRedditAnalyzer:
         self.reddit_available = bool(
             self.reddit_client_id and 
             self.reddit_client_secret and 
-            self.reddit_client_id != 'your_reddit_client_id' and
-            self.reddit_client_secret != 'your_reddit_client_secret' and
-            len(self.reddit_client_id) > 10 and
-            len(self.reddit_client_secret) > 10
+            self.reddit_client_id != 'your_reddit_client_id_here' and
+            self.reddit_client_secret != 'your_reddit_client_secret_here'
         )
         
         if not self.reddit_available:

@@ -23,6 +23,7 @@ from ...core.error_handler import (
     ValidationException,
     ImageProcessingException,
     ExternalAPIException,
+    NotFoundException,
     get_request_id
 )
 
@@ -277,15 +278,8 @@ async def try_proxy_with_retry(url: str, max_retries: int = 2, request_id: Optio
     
     raise ImageProcessingException(url, f"Could not load image after {max_retries + 1} attempts: {last_error}")
 
-@router.get("/proxy")
-@router.get("/image-proxy")  # Add compatibility route for frontend
-async def proxy_image(
-    request: Request,
-    url: str = Query(..., description="Image URL to proxy")
-):
-    """Enhanced proxy for external images with retry mechanism, caching, and fallback generation"""
-    request_id = get_request_id(request)
-    
+async def _proxy_image_internal(url: str, request_id: Optional[str] = None) -> Response:
+    """Internal function to proxy images without FastAPI dependencies"""
     try:
         # Clean up expired cache entries periodically
         _clear_expired_image_cache()
@@ -358,6 +352,16 @@ async def proxy_image(
             )
         except:
             raise ImageProcessingException(url, "Unable to generate fallback image")
+
+@router.get("/proxy")
+@router.get("/image-proxy")  # Add compatibility route for frontend
+async def proxy_image(
+    request: Request,
+    url: str = Query(..., description="Image URL to proxy")
+):
+    """Enhanced proxy for external images with retry mechanism, caching, and fallback generation"""
+    request_id = get_request_id(request)
+    return await _proxy_image_internal(url, request_id)
 
 @router.get("/cached/{filename}")
 async def get_cached_image(request: Request, filename: str):

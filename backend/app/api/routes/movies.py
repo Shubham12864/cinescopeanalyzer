@@ -2081,10 +2081,13 @@ async def proxy_image_options():
     )
 
 @router.get("/image-proxy")
-async def proxy_image_redirect(url: str):
+async def proxy_image_redirect(request: Request, url: str):
     """Proxy images - redirects to enhanced image service for compatibility"""
-    from ..routes.images import proxy_image
-    return await proxy_image(url)
+    from ..routes.images import _proxy_image_internal
+    from ...core.error_handler import get_request_id
+    
+    request_id = get_request_id(request)
+    return await _proxy_image_internal(url, request_id)
 
 # Movie by ID route - MUST be at the end to avoid catching other routes
 @router.get("/{movie_id}", response_model=Movie)

@@ -60,14 +60,6 @@ jobs:
           PORT=8000
           PYTHONPATH=/app
           PYTHONUNBUFFERED=1
-        containerAppName: ${{ env.AZURE_CONTAINER_APP_NAME }}
-        resourceGroup: ${{ env.AZURE_RESOURCE_GROUP }}
-        imageToDeploy: ${{ env.CONTAINER_REGISTRY }}/${{ github.repository }}/backend:${{ github.sha }}
-        environmentVariables: |
-          OMDB_API_KEY=secretref:omdb-api-key
-          MONGODB_URI=secretref:mongodb-uri
-          PORT=8000
-          PYTHONPATH=/app
           PYTHONUNBUFFERED=1
 
   deploy-frontend:
