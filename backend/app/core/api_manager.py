@@ -122,7 +122,7 @@ class APIManager:
         self.logger.info("💾 Free Redis-like cache system: ENABLED")
         
     async def search_movies(self, query: str, limit: int = 20) -> List[Dict]:
-        """Search movies with real API priority and caching"""
+        """Search movies with OMDB API priority, proper error logging, and exponential backoff"""
         if not query.strip():
             return []
         
@@ -137,40 +137,44 @@ class APIManager:
         
         self.logger.info(f"💾🔍 Cache MISS - Searching APIs for: '{query}' (limit: {limit})")
         
-        try:            # Priority 1: OMDB API (most comprehensive data)
-            self.logger.info("🎬 Trying OMDB API...")
-            omdb_results = await self.omdb_api.search_movies(query, limit)
-            self.logger.info(f"🎬 OMDB returned {len(omdb_results)} results")            
-            if omdb_results:
-                normalized = [self._normalize_movie_dict(m) for m in omdb_results]
-                self.logger.info(f"✅ OMDB SUCCESS: Got {len(normalized)} movies")
-                # Skip enrichment for real-time search to avoid timeouts
-                # enriched_omdb = await self._enrich_with_scraping(normalized)
-                # Cache OMDB results for 2 hours (premium data)
-                self.cache.set(cache_key, normalized[:limit], ttl=7200)
-                return normalized[:limit]
-                
-            # Priority 2: Scrapy Search (comprehensive web scraping)
-            if self.scrapy_search:
-                self.logger.info("🕷️ Priority 2: Trying Scrapy search...")
+        # Priority 1: OMDB API with retry and exponential backoff (highest priority)
+        omdb_results = await self._search_omdb_with_exponential_backoff(query, limit)
+        if omdb_results:
+            normalized = [self._normalize_movie_dict(m) for m in omdb_results]
+            self.logger.info(f"✅ OMDB SUCCESS: Got {len(normalized)} movies")
+            # Cache OMDB results for 2 hours (premium data)
+            self.cache.set(cache_key, normalized[:limit], ttl=7200)
+            return normalized[:limit]
+            
+        # Priority 2: Scrapy Search (comprehensive web scraping)
+        if self.scrapy_search:
+            self.logger.info("🕷️ Priority 2: Trying Scrapy search...")
+            try:
                 scrapy_results = await self.scrapy_search.search_movies(query, limit)
                 if scrapy_results:
                     self.logger.info(f"✅ SCRAPY SUCCESS: Got {len(scrapy_results)} movies from Scrapy")
                     # Cache Scrapy results for 3 hours (high quality, stable data)
                     self.cache.set(cache_key, scrapy_results[:limit], ttl=10800)
                     return scrapy_results[:limit]
-                
-            # Priority 3: Legacy web scraping (better than TMDB for detailed data)
-            if self.scrapers:
-                self.logger.info("🕷️ Priority 3: Trying legacy web scraping...")
+            except Exception as e:
+                self.logger.error(f"❌ Scrapy search failed: {e}")
+            
+        # Priority 3: Legacy web scraping (better than TMDB for detailed data)
+        if self.scrapers:
+            self.logger.info("🕷️ Priority 3: Trying legacy web scraping...")
+            try:
                 scraping_results = await self._search_with_scraping(query, limit)
                 if scraping_results:
                     self.logger.info(f"✅ LEGACY SCRAPING SUCCESS: Got {len(scraping_results)} movies")
                     # Cache scraping results for 2 hours 
                     self.cache.set(cache_key, scraping_results[:limit], ttl=7200)
                     return scraping_results[:limit]
-                  # Priority 4: TMDB API (last resort for live data)
-            self.logger.info("🎭 Priority 4: Trying TMDB API (OMDB + Scrapy failed)...")
+            except Exception as e:
+                self.logger.error(f"❌ Legacy scraping failed: {e}")
+                  
+        # Priority 4: TMDB API (last resort for live data)
+        self.logger.info("🎭 Priority 4: Trying TMDB API (OMDB + Scrapy failed)...")
+        try:
             tmdb_results = await self.tmdb_api.search_movies(query, limit)
             self.logger.info(f"🎭 TMDB returned {len(tmdb_results)} results")
             
@@ -182,29 +186,59 @@ class APIManager:
                 # Cache TMDB results for shorter time (lower priority)
                 self.cache.set(cache_key, enriched_tmdb[:limit], ttl=3600)
                 return enriched_tmdb[:limit]
-                
-            # Priority 5: Fallback data (demo/mock data as absolute last resort)
-            self.logger.warning("🔄 All APIs failed - Using demo data as fallback")
-            # Try Scrapy one more time as last effort before demo data
-            if self.scrapy_search:
-                self.logger.info("🕷️ Final attempt with Scrapy...")
-                scrapy_fallback = await self.scrapy_search.search_movies(query, limit)
-                if scrapy_fallback:
-                    self.logger.info(f"✅ Scrapy fallback got {len(scrapy_fallback)} movies")
-                    self.cache.set(cache_key, scrapy_fallback[:limit], ttl=7200)
-                    return scrapy_fallback[:limit]
-                    
-            # Priority 6: Mix of demo data as last resort
-            self.logger.warning("🔄 Using demo data as fallback")
-            fallback_data = self._get_fallback_movie_data()
-            filtered_fallback = [movie for movie in fallback_data if query.lower() in movie['title'].lower()][:limit] or omdb_results[:limit] or tmdb_results[:limit]
-            # Cache fallback data for shorter time (30 minutes)
-            self.cache.set(cache_key, filtered_fallback, ttl=1800)
-            return filtered_fallback
-            
         except Exception as e:
-            self.logger.error(f"❌ Search error: {e}")
-            return await self._get_demo_movies(query, limit)
+            self.logger.error(f"❌ TMDB search failed: {e}")
+            
+        # Priority 5: Return empty results instead of demo data
+        self.logger.warning(f"❌ All API sources failed for query '{query}' - returning empty results")
+        return []
+    
+    async def _search_omdb_with_exponential_backoff(self, query: str, limit: int) -> List[Dict]:
+        """Search OMDB API with exponential backoff retry mechanism"""
+        if not self.omdb_api or not self.has_omdb:
+            self.logger.warning("🔑 OMDB API not available - skipping")
+            return []
+        
+        max_retries = 3
+        base_delay = 1.0  # Start with 1 second
+        
+        for attempt in range(max_retries):
+            try:
+                self.logger.info(f"🎬 OMDB attempt {attempt + 1}/{max_retries} for '{query}'")
+                
+                # Try OMDB search with timeout
+                omdb_results = await asyncio.wait_for(
+                    self.omdb_api.search_movies(query, limit),
+                    timeout=8.0  # 8-second timeout as specified in requirements
+                )
+                
+                if omdb_results:
+                    # Filter out demo/fallback results - only return real API data
+                    real_results = [
+                        result for result in omdb_results 
+                        if result.get('source') not in ['demo', 'demo_omdb', 'fallback']
+                    ]
+                    
+                    if real_results:
+                        self.logger.info(f"✅ OMDB SUCCESS on attempt {attempt + 1}: {len(real_results)} real results")
+                        return real_results
+                    else:
+                        self.logger.warning(f"⚠️ OMDB returned only demo data on attempt {attempt + 1}")
+                
+            except asyncio.TimeoutError:
+                self.logger.error(f"⏰ OMDB timeout on attempt {attempt + 1} (8s limit exceeded)")
+                
+            except Exception as e:
+                self.logger.error(f"❌ OMDB error on attempt {attempt + 1}: {e}")
+            
+            # Apply exponential backoff if not the last attempt
+            if attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt)  # Exponential backoff: 1s, 2s, 4s
+                self.logger.info(f"⏳ Retrying OMDB in {delay}s...")
+                await asyncio.sleep(delay)
+        
+        self.logger.error(f"❌ OMDB failed after {max_retries} attempts with exponential backoff")
+        return []
     
     async def get_movie_by_id(self, movie_id: str) -> Optional[Dict]:
         """

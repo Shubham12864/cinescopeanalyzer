@@ -37,6 +37,9 @@ prawcore==2.3.0
 # Data Processing (Lightweight)
 pandas==2.1.4
 
+# Image Processing
+Pillow==10.1.0
+
 # Text Processing
 vaderSentiment==3.3.2
 textblob==0.17.1

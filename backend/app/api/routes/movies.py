@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response, FileResponse, StreamingResponse
 from typing import List, Optional, Dict
 import asyncio
@@ -14,6 +14,15 @@ from ...models.movie import Movie, Review, AnalyticsData, SentimentData, RatingD
 from ...services.movie_service import MovieService
 from ...services.comprehensive_movie_service_working import ComprehensiveMovieService
 from ...services.image_cache_service import ImageCacheService
+from ...core.error_handler import (
+    error_handler, 
+    ErrorSeverity, 
+    ValidationException, 
+    NotFoundException, 
+    SearchException,
+    ExternalAPIException,
+    get_request_id
+)
 
 router = APIRouter(prefix="/api/movies", tags=["movies"])
 
@@ -23,9 +32,56 @@ comprehensive_service = ComprehensiveMovieService()
 image_cache_service = ImageCacheService()
 logger = logging.getLogger(__name__)
 
+# Health check endpoint
+@router.get("/health")
+async def health_check(request: Request):
+    """Health check endpoint for movie service"""
+    request_id = get_request_id(request)
+    
+    try:
+        # Test basic service functionality
+        health_status = {
+            "status": "healthy",
+            "timestamp": datetime.utcnow().isoformat(),
+            "services": {
+                "movie_service": "operational",
+                "api_manager": "operational",
+                "image_processing": "operational"
+            },
+            "request_id": request_id
+        }
+        
+        # Test API manager connectivity
+        try:
+            # Quick test search to verify API connectivity
+            test_results = await movie_service.api_manager.search_movies("test", 1)
+            health_status["services"]["external_apis"] = "operational"
+        except Exception as api_error:
+            health_status["services"]["external_apis"] = "degraded"
+            health_status["warnings"] = ["External movie APIs may be experiencing issues"]
+            logger.warning(f"API health check failed: {api_error}")
+        
+        return health_status
+        
+    except Exception as e:
+        error_handler.log_error(
+            e,
+            severity=ErrorSeverity.HIGH,
+            context={"endpoint": "health_check"},
+            request_id=request_id
+        )
+        
+        return {
+            "status": "unhealthy",
+            "timestamp": datetime.utcnow().isoformat(),
+            "error": "Service health check failed",
+            "request_id": request_id
+        }
+
 # Add a route for the base path without trailing slash
 @router.get("", response_model=List[Movie])
 async def get_movies_no_slash(
+    request: Request,
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     genre: Optional[str] = None,
@@ -34,7 +90,20 @@ async def get_movies_no_slash(
     sort_order: Optional[str] = Query("desc", regex="^(asc|desc)$")
 ):
     """Get all movies with optional filtering and pagination (no trailing slash)"""
+    request_id = get_request_id(request)
+    
     try:
+        # Validate parameters
+        if limit > 100:
+            raise error_handler.handle_validation_error(
+                "Limit cannot exceed 100", "limit", limit
+            )
+        
+        if year and (year < 1900 or year > 2030):
+            raise error_handler.handle_validation_error(
+                "Year must be between 1900 and 2030", "year", year
+            )
+        
         movies = await movie_service.get_movies(
             limit=limit,
             offset=offset,
@@ -43,11 +112,26 @@ async def get_movies_no_slash(
             sort_by=sort_by,
             sort_order=sort_order
         )
+        
         # Process and cache images
         movies = await process_movie_images(movies)
+        
+        logger.info(f"Successfully retrieved {len(movies)} movies (request_id: {request_id})")
         return movies
+        
+    except ValidationException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        error_handler.log_error(
+            e, 
+            severity=ErrorSeverity.HIGH,
+            context={"endpoint": "get_movies", "params": {"limit": limit, "offset": offset}},
+            request_id=request_id
+        )
+        raise HTTPException(
+            status_code=500, 
+            detail="Failed to retrieve movies. Please try again later."
+        )
 
 async def process_movie_images(movies: List[Movie], use_dynamic_loading: bool = False) -> List[Movie]:
     """Process movie images - either dynamic loading or cached based on use_dynamic_loading flag"""
@@ -58,23 +142,14 @@ async def process_movie_images(movies: List[Movie], use_dynamic_loading: bool = 
                 clean_poster_url = movie.poster.replace('\n', '').replace('\r', '').replace(' ', '').strip()
                 
                 if use_dynamic_loading:
-                    # For dynamic loading (searches), use proxy URLs or direct URLs
-                    if clean_poster_url.startswith('https://m.media-amazon.com/') or clean_poster_url.startswith('https://media-amazon.com/'):
-                        proxy_url = f"/api/movies/image-proxy?url={clean_poster_url}"
-                        movie.poster = proxy_url
-                        logger.debug(f"🔄 Dynamic proxy URL for {movie.title}: {proxy_url}")
-                    else:
-                        # For non-Amazon URLs, use direct URL for dynamic loading
-                        movie.poster = clean_poster_url
-                        logger.debug(f"🔗 Dynamic direct URL for {movie.title}: {clean_poster_url}")
+                    # For dynamic loading (searches), always use enhanced proxy service
+                    from urllib.parse import quote
+                    proxy_url = f"/api/images/image-proxy?url={quote(clean_poster_url)}"
+                    movie.poster = proxy_url
+                    logger.debug(f"🔄 Dynamic enhanced proxy URL for {movie.title}: {proxy_url}")
                 else:
-                    # For cached loading (static lists), use cached images
-                    if clean_poster_url.startswith('https://m.media-amazon.com/') or clean_poster_url.startswith('https://media-amazon.com/'):
-                        proxy_url = f"/api/movies/image-proxy?url={clean_poster_url}"
-                        movie.poster = proxy_url
-                        logger.debug(f"🔄 Using proxy URL for {movie.title}: {proxy_url}")
-                    else:
-                        # Try to get or cache the image for non-Amazon URLs
+                    # For cached loading (static lists), prefer cached but fallback to enhanced proxy
+                    try:
                         cached_url = await image_cache_service.get_or_cache_image(
                             clean_poster_url, 
                             movie.imdbId,
@@ -84,8 +159,18 @@ async def process_movie_images(movies: List[Movie], use_dynamic_loading: bool = 
                             movie.poster = cached_url
                             logger.debug(f"✅ Using cached image for {movie.title}: {cached_url}")
                         else:
-                            movie.poster = clean_poster_url
-                            logger.warning(f"⚠️ Could not cache image for {movie.title}, using cleaned original URL")
+                            # Fallback to enhanced proxy service
+                            from urllib.parse import quote
+                            proxy_url = f"/api/images/image-proxy?url={quote(clean_poster_url)}"
+                            movie.poster = proxy_url
+                            logger.debug(f"🔄 Fallback to enhanced proxy for {movie.title}: {proxy_url}")
+                    except Exception as cache_error:
+                        logger.warning(f"⚠️ Cache service error for {movie.title}: {cache_error}")
+                        # Fallback to enhanced proxy service
+                        from urllib.parse import quote
+                        proxy_url = f"/api/images/image-proxy?url={quote(clean_poster_url)}"
+                        movie.poster = proxy_url
+                        logger.debug(f"🔄 Error fallback to enhanced proxy for {movie.title}: {proxy_url}")
         return movies
     except Exception as e:
         logger.error(f"❌ Error processing movie images: {e}")
@@ -93,6 +178,7 @@ async def process_movie_images(movies: List[Movie], use_dynamic_loading: bool = 
 
 @router.get("/", response_model=List[Movie])
 async def get_movies(
+    request: Request,
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     genre: Optional[str] = None,
@@ -101,35 +187,203 @@ async def get_movies(
     sort_order: Optional[str] = Query("desc", regex="^(asc|desc)$")
 ):
     """Get all movies with optional filtering and pagination"""
+    request_id = get_request_id(request)
+    
     try:
-        movies = await movie_service.get_movies(
-            limit=limit,
-            offset=offset,
-            genre=genre,
-            year=year,
-            sort_by=sort_by,
-            sort_order=sort_order
-        )
-        # Process and cache images
-        movies = await process_movie_images(movies)
-        return movies
+        # Validate parameters
+        if limit > 100:
+            raise error_handler.handle_validation_error(
+                "Limit cannot exceed 100", "limit", limit
+            )
+        
+        if year and (year < 1900 or year > 2030):
+            raise error_handler.handle_validation_error(
+                "Year must be between 1900 and 2030", "year", year
+            )
+        
+        if genre and len(genre) > 50:
+            raise error_handler.handle_validation_error(
+                "Genre filter too long (max 50 characters)", "genre", genre
+            )
+        
+        try:
+            movies = await movie_service.get_movies(
+                limit=limit,
+                offset=offset,
+                genre=genre,
+                year=year,
+                sort_by=sort_by,
+                sort_order=sort_order
+            )
+            
+            # Process and cache images
+            movies = await process_movie_images(movies)
+            
+            logger.info(f"Successfully retrieved {len(movies)} movies (request_id: {request_id})")
+            return movies
+            
+        except ExternalAPIException as api_error:
+            # Handle external API failures
+            error_handler.log_error(
+                api_error,
+                severity=ErrorSeverity.MEDIUM,
+                context={
+                    "endpoint": "get_movies", 
+                    "params": {"limit": limit, "offset": offset, "genre": genre, "year": year},
+                    "error_type": "external_api_failure"
+                },
+                request_id=request_id
+            )
+            
+            # Return empty list with warning for API failures
+            logger.warning(f"External API unavailable, returning empty results (request_id: {request_id})")
+            return []
+            
+        except asyncio.TimeoutError:
+            # Handle timeout errors
+            error_handler.log_error(
+                Exception("Movies retrieval timeout"),
+                severity=ErrorSeverity.MEDIUM,
+                context={
+                    "endpoint": "get_movies",
+                    "params": {"limit": limit, "offset": offset},
+                    "error_type": "timeout"
+                },
+                request_id=request_id
+            )
+            
+            raise HTTPException(
+                status_code=504,
+                detail="Request timed out while retrieving movies. Please try again."
+            )
+        
+    except ValidationException:
+        raise
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        error_handler.log_error(
+            e, 
+            severity=ErrorSeverity.HIGH,
+            context={
+                "endpoint": "get_movies", 
+                "params": {"limit": limit, "offset": offset, "genre": genre, "year": year},
+                "error_type": "unexpected"
+            },
+            request_id=request_id
+        )
+        
+        raise HTTPException(
+            status_code=500, 
+            detail="An unexpected error occurred while retrieving movies. Please try again later."
+        )
 
-@router.get("/search", response_model=List[Movie])
+@router.get("/search")
 async def search_movies(
+    request: Request,
+    response: Response,
     q: str = Query(..., min_length=1),
     limit: int = Query(20, ge=1, le=100)
 ):
-    """Search movies by title, plot, or genre with dynamic image loading"""
+    """Search movies by title, plot, or genre with dynamic image loading and caching"""
+    request_id = get_request_id(request)
+    
     try:
-        movies = await movie_service.search_movies(query=q, limit=limit)
-        # Use dynamic image loading for search results
-        movies = await process_movie_images(movies, use_dynamic_loading=True)
-        logger.info(f"🔍 Search for '{q}' returned {len(movies)} movies with dynamic images")
-        return movies
+        # Validate search query
+        if not q or len(q.strip()) == 0:
+            raise error_handler.handle_validation_error(
+                "Search query cannot be empty", "q", q
+            )
+        
+        if len(q) > 100:
+            raise error_handler.handle_validation_error(
+                "Search query too long (max 100 characters)", "q", q
+            )
+        
+        if limit > 100:
+            raise error_handler.handle_validation_error(
+                "Limit cannot exceed 100", "limit", limit
+            )
+        
+        # Sanitize query
+        sanitized_query = q.strip()
+        
+        try:
+            movies = await movie_service.search_movies(query=sanitized_query, limit=limit)
+            
+            # Use dynamic image loading for search results
+            movies = await process_movie_images(movies, use_dynamic_loading=True)
+            
+            # Add caching headers for successful search results (2 hours as per requirements)
+            response.headers["Cache-Control"] = "public, max-age=7200, s-maxage=7200"  # 2 hours
+            response.headers["Vary"] = "Accept-Encoding"
+            response.headers["ETag"] = f'"{hash(sanitized_query + str(limit))}"'
+            
+            logger.info(f"🔍 Search for '{sanitized_query}' returned {len(movies)} movies (request_id: {request_id})")
+            return movies
+            
+        except ExternalAPIException as api_error:
+            # Handle external API failures gracefully
+            error_handler.log_error(
+                api_error,
+                severity=ErrorSeverity.MEDIUM,
+                context={
+                    "endpoint": "search_movies",
+                    "query": sanitized_query,
+                    "limit": limit,
+                    "error_type": "external_api_failure"
+                },
+                request_id=request_id
+            )
+            
+            # Return specific error for API failures with retry suggestion
+            raise SearchException(
+                query=sanitized_query,
+                reason="External movie database temporarily unavailable. Please try again in a few moments."
+            )
+            
+        except asyncio.TimeoutError:
+            # Handle timeout errors specifically
+            error_handler.log_error(
+                Exception("Search timeout"),
+                severity=ErrorSeverity.MEDIUM,
+                context={
+                    "endpoint": "search_movies",
+                    "query": sanitized_query,
+                    "limit": limit,
+                    "error_type": "timeout"
+                },
+                request_id=request_id
+            )
+            
+            raise SearchException(
+                query=sanitized_query,
+                reason="Search request timed out. Please try a more specific search term."
+            )
+        
+    except ValidationException:
+        raise
+    except SearchException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Log unexpected errors with high severity
+        error_handler.log_error(
+            e,
+            severity=ErrorSeverity.HIGH,
+            context={
+                "endpoint": "search_movies",
+                "query": q,
+                "limit": limit,
+                "error_type": "unexpected"
+            },
+            request_id=request_id
+        )
+        
+        # Return generic error for unexpected failures
+        raise SearchException(
+            query=q,
+            reason="An unexpected error occurred during search. Please try again later."
+        )
 
 @router.get("/suggestions", response_model=List[Movie])
 async def get_movie_suggestions(limit: int = Query(12, ge=1, le=20)):
@@ -1813,35 +2067,24 @@ async def get_cached_movie_image(filename: str):
         logger.error(f"❌ Error serving cached image {filename}: {e}")
         raise HTTPException(status_code=500, detail=f"Error serving cached image: {str(e)}")
 
-# Image proxy route to avoid CORS issues
+# Image proxy route compatibility - redirect to main image service
+@router.options("/image-proxy")
+async def proxy_image_options():
+    """Handle CORS preflight requests for image proxy compatibility"""
+    return Response(
+        headers={
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+            'Access-Control-Max-Age': '86400'  # Cache preflight for 24 hours
+        }
+    )
+
 @router.get("/image-proxy")
-async def proxy_image(url: str):
-    """Proxy images to avoid CORS issues"""
-    try:
-        # Validate the URL to prevent abuse
-        if not url.startswith('https://m.media-amazon.com/') and not url.startswith('https://media-amazon.com/'):
-            raise HTTPException(status_code=400, detail="Invalid image URL")
-        
-        # Fetch the image
-        response = requests.get(url, timeout=10, headers={
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        })
-        
-        if response.status_code == 200:
-            return Response(
-                content=response.content, 
-                media_type=response.headers.get('content-type', 'image/jpeg'),
-                headers={
-                    'Cache-Control': 'public, max-age=86400',  # Cache for 24 hours
-                    'Access-Control-Allow-Origin': '*'
-                }
-            )
-        else:
-            raise HTTPException(status_code=404, detail="Image not found")
-            
-    except Exception as e:
-        logger.error(f"Error proxying image {url}: {e}")
-        raise HTTPException(status_code=500, detail="Error fetching image")
+async def proxy_image_redirect(url: str):
+    """Proxy images - redirects to enhanced image service for compatibility"""
+    from ..routes.images import proxy_image
+    return await proxy_image(url)
 
 # Movie by ID route - MUST be at the end to avoid catching other routes
 @router.get("/{movie_id}", response_model=Movie)
@@ -1861,48 +2104,6 @@ async def get_movie(movie_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/image-proxy")
-async def image_proxy(url: str):
-    """Proxy images to handle CORS and access issues"""
-    try:
-        logger.debug(f"🖼️ Proxying image request for: {url}")
-        
-        # Clean the URL
-        clean_url = url.replace('\n', '').replace('\r', '').replace(' ', '').strip()
-        
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Accept': 'image/*,*/*',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Referer': 'https://www.imdb.com/',
-                'Cache-Control': 'no-cache'
-            }
-            
-            response = await client.get(clean_url, headers=headers)
-            response.raise_for_status()
-            
-            # Get content type
-            content_type = response.headers.get('content-type', 'image/jpeg')
-            
-            logger.debug(f"✅ Successfully proxied image: {url} (type: {content_type})")
-            
-            return Response(
-                content=response.content,
-                media_type=content_type,
-                headers={
-                    'Cache-Control': 'public, max-age=3600',
-                    'Access-Control-Allow-Origin': '*'
-                }
-            )
-            
-    except httpx.HTTPStatusError as e:
-        logger.error(f"❌ HTTP error proxying image {url}: {e.response.status_code}")
-        raise HTTPException(status_code=e.response.status_code, detail="Image not found")
-    except Exception as e:
-        logger.error(f"❌ Error proxying image {url}: {e}")
-        raise HTTPException(status_code=500, detail="Error loading image")
 
 def _create_frontend_summary(reddit_analysis: Dict) -> Dict:
     """Convert Reddit analyzer output to frontend-compatible summary format"""

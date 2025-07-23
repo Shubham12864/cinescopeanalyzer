@@ -2,13 +2,22 @@ from typing import List, Optional, Dict
 import asyncio
 import random
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
+import json
 
 from ..models.movie import Movie, Review, AnalyticsData, SentimentData, RatingDistributionData, MovieSummary
 from ..core.api_manager import APIManager
 from ..core.azure_database import get_movies_collection, get_cache_collection
 from .comprehensive_movie_service_working import ComprehensiveMovieService
 from ..scraper.enhanced_movie_scraper import EnhancedMovieDescriptionScraper
+from .image_processing_service import image_processing_service
+from ..core.error_handler import (
+    error_handler,
+    ErrorSeverity,
+    SearchException,
+    ExternalAPIException,
+    NotFoundException
+)
 
 class MovieService:
     def __init__(self):
@@ -20,6 +29,11 @@ class MovieService:
         self.movies_collection = None
         self.cache_collection = None
         self.movies_db = []  # Initialize movies_db
+        
+        # In-memory cache for search results (2 hours TTL)
+        self._search_cache: Dict[str, Dict] = {}
+        self._cache_ttl = 2 * 60 * 60  # 2 hours in seconds
+        
         self._init_demo_data()
     
     def _init_demo_data(self):
@@ -28,6 +42,142 @@ class MovieService:
         # Only use demo data as absolute fallback
         self.movies_db = []
         self.logger.info("🚀 MovieService initialized - will load real data on first request")
+    
+    def _generate_cache_key(self, query: str, limit: int = 20) -> str:
+        """Generate cache key for search queries"""
+        return f"search:{query.lower().strip()}:{limit}"
+    
+    async def _check_cache(self, cache_key: str) -> Optional[List[Movie]]:
+        """Check if cached results exist and are still valid"""
+        if cache_key not in self._search_cache:
+            return None
+        
+        cache_entry = self._search_cache[cache_key]
+        cache_time = cache_entry.get('timestamp', 0)
+        current_time = datetime.now().timestamp()
+        
+        # Check if cache has expired
+        if current_time - cache_time > self._cache_ttl:
+            self.logger.info(f"💾 Cache EXPIRED for key: {cache_key}")
+            del self._search_cache[cache_key]
+            return None
+        
+        # Return cached movies
+        cached_data = cache_entry.get('data', [])
+        movies = []
+        
+        for movie_data in cached_data:
+            try:
+                movie = Movie(
+                    id=movie_data.get('id', ''),
+                    title=movie_data.get('title', ''),
+                    plot=movie_data.get('plot', ''),
+                    rating=movie_data.get('rating', 0),
+                    genre=movie_data.get('genre', []),
+                    year=movie_data.get('year', 0),
+                    poster=movie_data.get('poster', ''),
+                    director=movie_data.get('director', ''),
+                    cast=movie_data.get('cast', []),
+                    reviews=[],
+                    imdbId=movie_data.get('imdbId'),
+                    runtime=movie_data.get('runtime', 120)
+                )
+                movies.append(movie)
+            except Exception as e:
+                self.logger.warning(f"Failed to reconstruct cached movie: {e}")
+                continue
+        
+        if movies:
+            age_minutes = (current_time - cache_time) / 60
+            self.logger.info(f"💾 Cache HIT for key: {cache_key} ({len(movies)} movies, age: {age_minutes:.1f}min)")
+            return movies
+        
+        return None
+    
+    async def _cache_search_results(self, cache_key: str, movies: List[Movie]) -> None:
+        """Cache search results for future use"""
+        try:
+            # Convert movies to serializable format
+            cached_data = []
+            for movie in movies:
+                movie_dict = {
+                    'id': movie.id,
+                    'title': movie.title,
+                    'plot': movie.plot,
+                    'rating': movie.rating,
+                    'genre': movie.genre,
+                    'year': movie.year,
+                    'poster': movie.poster,
+                    'director': movie.director,
+                    'cast': movie.cast,
+                    'imdbId': movie.imdbId,
+                    'runtime': movie.runtime
+                }
+                cached_data.append(movie_dict)
+            
+            # Store in cache with timestamp
+            self._search_cache[cache_key] = {
+                'data': cached_data,
+                'timestamp': datetime.now().timestamp()
+            }
+            
+            self.logger.info(f"💾 Cache SET for key: {cache_key} ({len(movies)} movies)")
+            
+            # Clean up old cache entries (keep only last 50 entries)
+            if len(self._search_cache) > 50:
+                # Remove oldest entries
+                sorted_keys = sorted(
+                    self._search_cache.keys(),
+                    key=lambda k: self._search_cache[k]['timestamp']
+                )
+                for old_key in sorted_keys[:-50]:
+                    del self._search_cache[old_key]
+                self.logger.info("💾 Cache cleanup: removed old entries")
+                
+        except Exception as e:
+            self.logger.warning(f"Failed to cache search results: {e}")
+    
+    def _clear_expired_cache(self) -> None:
+        """Clear expired cache entries"""
+        current_time = datetime.now().timestamp()
+        expired_keys = []
+        
+        for key, entry in self._search_cache.items():
+            if current_time - entry['timestamp'] > self._cache_ttl:
+                expired_keys.append(key)
+        
+        for key in expired_keys:
+            del self._search_cache[key]
+        
+        if expired_keys:
+            self.logger.info(f"💾 Cache cleanup: removed {len(expired_keys)} expired entries")
+    
+    def _process_movie_image(self, poster_url: str, source: str = 'generic') -> str:
+        """Process movie poster URL using the image processing service"""
+        if not poster_url:
+            return ''
+        
+        try:
+            result = image_processing_service.process_image_url(poster_url, source)
+            
+            if result['valid'] and result['processed_url']:
+                processed_url = result['processed_url']
+                
+                # Log processing details for debugging
+                if result.get('modifications'):
+                    self.logger.debug(f"Image URL processed with modifications: {result['modifications']}")
+                
+                if result.get('cached'):
+                    self.logger.debug(f"Used cached processed URL for: {poster_url}")
+                
+                return processed_url
+            else:
+                self.logger.warning(f"Failed to process image URL: {poster_url} - {result.get('error', 'Unknown error')}")
+                return ''
+                
+        except Exception as e:
+            self.logger.error(f"Error processing movie image URL {poster_url}: {e}")
+            return poster_url  # Return original URL as fallback
     
     async def _load_initial_movies(self):
         """Load initial movies from real APIs"""
@@ -153,58 +303,74 @@ class MovieService:
         return filtered_movies[offset:offset + limit]
     
     async def search_movies(self, query: str, limit: int = 20) -> List[Movie]:
-        """🚀 DYNAMIC REAL-TIME SEARCH - Always fetch fresh data for searches"""
+        """🚀 ENHANCED REAL-TIME SEARCH - Prioritizes OMDB API with proper timeout and retry"""
         import time
         start_time = time.time()
+        
         try:
-            self.logger.info(f"🔍 DYNAMIC Search: '{query}' (limit: {limit})")
-            
-            # STEP 1: OMDB API first (real-time data)
-            omdb_results = await self._search_omdb_direct(query, limit)
-            if omdb_results:
-                self.logger.info(f"✅ OMDB returned {len(omdb_results)} fresh results")
-                return omdb_results[:limit]
-            
-            # STEP 2: API Manager for more sources (real-time data)
-            self.logger.info("🔄 OMDB no results, trying API Manager...")
-            try:
-                movie_data_list = await asyncio.wait_for(
-                    self.api_manager.search_movies(query, limit),
-                    timeout=8.0
+            # Validate input parameters
+            if not query or not query.strip():
+                raise error_handler.handle_validation_error(
+                    "Search query cannot be empty", "query", query
                 )
-                
-                if movie_data_list:
-                    movies = [self._convert_dict_to_movie(data) for data in movie_data_list]
-                    self.logger.info(f"✅ API Manager: {len(movies)} fresh movies")
-                    return movies[:limit]
-                    
-            except asyncio.TimeoutError:
-                self.logger.warning("API Manager timeout after 8s")
-            except Exception as e:
-                self.logger.warning(f"API Manager failed: {e}")
             
-            # STEP 3: Quick cache check as fallback (only if APIs fail)
+            if len(query.strip()) > 100:
+                raise error_handler.handle_validation_error(
+                    "Search query too long (max 100 characters)", "query", query
+                )
+            
+            if limit <= 0 or limit > 100:
+                raise error_handler.handle_validation_error(
+                    "Limit must be between 1 and 100", "limit", limit
+                )
+            
+            sanitized_query = query.strip()
+            self.logger.info(f"🔍 ENHANCED Search: '{sanitized_query}' (limit: {limit})")
+            
+            # STEP 1: OMDB API with retry mechanism and 8-second timeout (highest priority)
+            try:
+                omdb_results = await self._search_omdb_with_retry(sanitized_query, limit, timeout=8.0)
+                if omdb_results:
+                    self.logger.info(f"✅ OMDB SUCCESS: {len(omdb_results)} fresh results")
+                    # Cache successful OMDB results
+                    await self._cache_search_results(f"search:{query.lower()}:{limit}", omdb_results)
+                    return omdb_results[:limit]
+            except Exception as omdb_error:
+                self.logger.warning(f"⚠️ OMDB API failed: {omdb_error}")
+            
+            # STEP 2: Web scraping as secondary option (before cache)
+            scraping_results = await self._search_with_web_scraping(query, limit)
+            if scraping_results:
+                self.logger.info(f"✅ Web Scraping SUCCESS: {len(scraping_results)} movies")
+                await self._cache_search_results(f"search:{query.lower()}:{limit}", scraping_results)
+                return scraping_results[:limit]
+            
+            # STEP 3: Cache check as tertiary fallback
             cache_key = f"search:{query.lower()}:{limit}"
             cached_result = await self._check_cache(cache_key)
             if cached_result:
                 self.logger.info(f"⚡ Cache FALLBACK - returning {len(cached_result)} results")
                 return cached_result[:limit]
             
-            # STEP 4: Database search as final fallback
+            # STEP 4: Database search as quaternary fallback
             db_results = await self._search_movies_in_db(query, limit)
             if db_results:
-                movies = [self._convert_dict_to_movie(data) for data in db_results]
-                self.logger.info(f"💾 Database FALLBACK - returning {len(movies)} results")
-                return movies[:limit]
+                movies = [self._convert_dict_to_movie(data) for data in db_results if data]
+                movies = [m for m in movies if m is not None]  # Filter out None results
+                if movies:
+                    self.logger.info(f"💾 Database FALLBACK - returning {len(movies)} results")
+                    return movies[:limit]
             
-            # STEP 4: Ultra-fast local search (instant results)
-            self.logger.info("⚡ Ultra-fast local search as final fallback")
-            return await self._fast_local_search(query, limit)
+            # STEP 5: Return empty results instead of demo data (absolute last resort)
+            elapsed = (time.time() - start_time) * 1000
+            self.logger.warning(f"❌ No results found for '{query}' after {elapsed:.0f}ms - returning empty list")
+            return []
             
         except Exception as e:
             elapsed = (time.time() - start_time) * 1000
             self.logger.error(f"❌ Search failed after {elapsed:.0f}ms: {e}")
-            return await self._emergency_fallback(query, limit)
+            # Return empty results instead of demo data on error
+            return []
     
     async def get_movie_by_id(self, movie_id: str) -> Optional[Movie]:
         """Get a specific movie by ID with enhanced descriptions"""
@@ -257,6 +423,10 @@ class MovieService:
             try:
                 movie_data = await self.api_manager.omdb_api.get_movie_by_id(movie_id)
                 if movie_data:
+                    # Process poster image URL
+                    poster_url = movie_data.get('poster', '')
+                    processed_poster = self._process_movie_image(poster_url, 'omdb')
+                    
                     movie = Movie(
                         id=movie_data.get('id', movie_id),
                         title=movie_data.get('title', 'Unknown'),
@@ -264,7 +434,7 @@ class MovieService:
                         rating=movie_data.get('rating', 0),
                         genre=movie_data.get('genre', []),
                         year=movie_data.get('year', 0),
-                        poster=movie_data.get('poster', ''),
+                        poster=processed_poster,
                         director=movie_data.get('director', ''),
                         cast=movie_data.get('cast', []),
                         reviews=[],
@@ -437,6 +607,301 @@ class MovieService:
         self.logger.info(f"✅ Analysis complete for {movie.title}: {len(movie.reviews)} reviews, {movie.rating} rating")
         return analysis_data
     
+    async def _search_omdb_with_retry(self, query: str, limit: int, timeout: float = 8.0) -> List[Movie]:
+        """Search OMDB API with retry mechanism and proper timeout"""
+        import asyncio
+        
+        max_retries = 2
+        retry_delay = 1.0  # Start with 1 second delay
+        
+        for attempt in range(max_retries + 1):
+            try:
+                self.logger.info(f"🔍 OMDB attempt {attempt + 1}/{max_retries + 1} for '{query}' (timeout: {timeout}s)")
+                
+                # Use asyncio.wait_for to enforce timeout
+                omdb_task = self.api_manager.omdb_api.search_movies(query, limit)
+                omdb_results = await asyncio.wait_for(omdb_task, timeout=timeout)
+                
+                if omdb_results:
+                    # Convert dict results to Movie objects
+                    movies = []
+                    for movie_data in omdb_results:
+                        if movie_data.get('source') in ['omdb', 'omdb_live']:  # Only real OMDB data
+                            # Process poster image URL
+                            poster_url = movie_data.get('poster', '')
+                            processed_poster = self._process_movie_image(poster_url, 'omdb')
+                            
+                            movie = Movie(
+                                id=movie_data.get('id', ''),
+                                title=movie_data.get('title', ''),
+                                plot=movie_data.get('plot', ''),
+                                rating=movie_data.get('rating', 0),
+                                genre=movie_data.get('genre', []),
+                                year=movie_data.get('year', 0),
+                                poster=processed_poster,
+                                director=movie_data.get('director', ''),
+                                cast=movie_data.get('cast', []),
+                                reviews=[],
+                                imdbId=movie_data.get('imdbId'),
+                                runtime=movie_data.get('runtime', 120)
+                            )
+                            movies.append(movie)
+                    
+                    if movies:
+                        self.logger.info(f"✅ OMDB retry success: {len(movies)} movies on attempt {attempt + 1}")
+                        return movies
+                
+            except asyncio.TimeoutError:
+                self.logger.warning(f"⏰ OMDB timeout on attempt {attempt + 1} after {timeout}s")
+                if attempt < max_retries:
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                    
+            except Exception as e:
+                self.logger.warning(f"❌ OMDB error on attempt {attempt + 1}: {e}")
+                if attempt < max_retries:
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+        
+        self.logger.warning(f"❌ OMDB failed after {max_retries + 1} attempts")
+        return []
+    
+    async def _search_with_web_scraping(self, query: str, limit: int) -> List[Movie]:
+        """Search using web scraping as secondary option"""
+        try:
+            self.logger.info(f"🕷️ Trying web scraping for '{query}'")
+            
+            # Try Scrapy search service first if available
+            if hasattr(self.api_manager, 'scrapy_search') and self.api_manager.scrapy_search:
+                scrapy_results = await self.api_manager.scrapy_search.search_movies(query, limit)
+                if scrapy_results:
+                    # Convert dict results to Movie objects
+                    movies = []
+                    for movie_data in scrapy_results:
+                        # Process poster image URL
+                        poster_url = movie_data.get('poster', '')
+                        processed_poster = self._process_movie_image(poster_url, 'scraped')
+                        
+                        movie = Movie(
+                            id=movie_data.get('id', ''),
+                            title=movie_data.get('title', ''),
+                            plot=movie_data.get('plot', ''),
+                            rating=movie_data.get('rating', 0),
+                            genre=movie_data.get('genre', []),
+                            year=movie_data.get('year', 0),
+                            poster=processed_poster,
+                            director=movie_data.get('director', ''),
+                            cast=movie_data.get('cast', []),
+                            reviews=[],
+                            imdbId=movie_data.get('imdbId'),
+                            runtime=movie_data.get('runtime', 120)
+                        )
+                        movies.append(movie)
+                    
+                    self.logger.info(f"✅ Scrapy search success: {len(movies)} movies")
+                    return movies
+            
+            # Try legacy web scraping if Scrapy not available
+            if self.api_manager.scrapers:
+                scraping_results = await self.api_manager._search_with_scraping(query, limit)
+                if scraping_results:
+                    # Convert dict results to Movie objects
+                    movies = []
+                    for movie_data in scraping_results:
+                        # Process poster image URL
+                        poster_url = movie_data.get('poster', '')
+                        processed_poster = self._process_movie_image(poster_url, 'scraped')
+                        
+                        movie = Movie(
+                            id=movie_data.get('id', ''),
+                            title=movie_data.get('title', ''),
+                            plot=movie_data.get('plot', ''),
+                            rating=movie_data.get('rating', 0),
+                            genre=movie_data.get('genre', []),
+                            year=movie_data.get('year', 0),
+                            poster=processed_poster,
+                            director=movie_data.get('director', ''),
+                            cast=movie_data.get('cast', []),
+                            reviews=[],
+                            imdbId=movie_data.get('imdbId'),
+                            runtime=movie_data.get('runtime', 120)
+                        )
+                        movies.append(movie)
+                    
+                    self.logger.info(f"✅ Legacy scraping success: {len(movies)} movies")
+                    return movies
+                    
+        except Exception as e:
+            self.logger.warning(f"❌ Web scraping failed: {e}")
+        
+        return []
+    
+    async def _cache_search_results(self, cache_key: str, results: List[Movie]) -> None:
+        """Cache search results for future use"""
+        try:
+            # Convert Movie objects to dicts for caching
+            cached_data = []
+            for movie in results:
+                cached_data.append({
+                    'id': movie.id,
+                    'title': movie.title,
+                    'plot': movie.plot,
+                    'rating': movie.rating,
+                    'genre': movie.genre,
+                    'year': movie.year,
+                    'poster': movie.poster,
+                    'director': movie.director,
+                    'cast': movie.cast,
+                    'imdbId': movie.imdbId,
+                    'runtime': movie.runtime
+                })
+            
+            # Use API manager's cache if available
+            if hasattr(self.api_manager, 'cache') and self.api_manager.cache:
+                self.api_manager.cache.set(cache_key, cached_data, ttl=7200)  # 2 hours
+                self.logger.info(f"💾 Cached {len(cached_data)} results for key: {cache_key}")
+                
+        except Exception as e:
+            self.logger.warning(f"❌ Failed to cache results: {e}")
+    
+    async def _check_cache(self, cache_key: str) -> List[Movie]:
+        """Check cache for existing search results"""
+        try:
+            if hasattr(self.api_manager, 'cache') and self.api_manager.cache:
+                cached_data = self.api_manager.cache.get(cache_key)
+                if cached_data:
+                    # Convert cached dicts back to Movie objects
+                    movies = []
+                    for movie_data in cached_data:
+                        # Process poster image URL
+                        poster_url = movie_data.get('poster', '')
+                        processed_poster = self._process_movie_image(poster_url, 'generic')
+                        
+                        movie = Movie(
+                            id=movie_data.get('id', ''),
+                            title=movie_data.get('title', ''),
+                            plot=movie_data.get('plot', ''),
+                            rating=movie_data.get('rating', 0),
+                            genre=movie_data.get('genre', []),
+                            year=movie_data.get('year', 0),
+                            poster=processed_poster,
+                            director=movie_data.get('director', ''),
+                            cast=movie_data.get('cast', []),
+                            reviews=[],
+                            imdbId=movie_data.get('imdbId'),
+                            runtime=movie_data.get('runtime', 120)
+                        )
+                        movies.append(movie)
+                    
+                    self.logger.info(f"💾 Cache hit: {len(movies)} movies for key: {cache_key}")
+                    return movies
+                    
+        except Exception as e:
+            self.logger.warning(f"❌ Cache check failed: {e}")
+        
+        return []
+    
+    async def _search_movies_in_db(self, query: str, limit: int) -> List[Dict]:
+        """Search movies in database as fallback"""
+        try:
+            # Search in local movies_db first
+            local_results = []
+            query_lower = query.lower()
+            
+            for movie in self.movies_db:
+                if (query_lower in movie.title.lower() or 
+                    any(query_lower in genre.lower() for genre in movie.genre) or
+                    query_lower in movie.director.lower() or
+                    any(query_lower in actor.lower() for actor in movie.cast)):
+                    
+                    local_results.append({
+                        'id': movie.id,
+                        'title': movie.title,
+                        'plot': movie.plot,
+                        'rating': movie.rating,
+                        'genre': movie.genre,
+                        'year': movie.year,
+                        'poster': movie.poster,
+                        'director': movie.director,
+                        'cast': movie.cast,
+                        'imdbId': movie.imdbId,
+                        'runtime': movie.runtime
+                    })
+            
+            if local_results:
+                self.logger.info(f"💾 Local DB search found {len(local_results)} results")
+                return local_results[:limit]
+            
+            # Try database collections if available
+            if self.movies_collection:
+                # This would be implemented based on your database structure
+                pass
+                
+        except Exception as e:
+            self.logger.warning(f"❌ Database search failed: {e}")
+        
+        return []
+    
+    async def _convert_dict_to_movie(self, movie_data: Dict) -> Optional[Movie]:
+        """Convert dictionary data to Movie object"""
+        try:
+            if not movie_data:
+                return None
+            
+            # Process poster image URL
+            poster_url = movie_data.get('poster', '')
+            source = movie_data.get('source', 'generic')
+            processed_poster = self._process_movie_image(poster_url, source)
+                
+            return Movie(
+                id=movie_data.get('id', ''),
+                title=movie_data.get('title', ''),
+                plot=movie_data.get('plot', ''),
+                rating=movie_data.get('rating', 0),
+                genre=movie_data.get('genre', []),
+                year=movie_data.get('year', 0),
+                poster=processed_poster,
+                director=movie_data.get('director', ''),
+                cast=movie_data.get('cast', []),
+                reviews=[],
+                imdbId=movie_data.get('imdbId'),
+                runtime=movie_data.get('runtime', 120)
+            )
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to convert dict to Movie: {e}")
+            return None
+    
+    async def _get_movie_from_db(self, movie_id: str) -> Optional[Dict]:
+        """Get movie from database by ID"""
+        try:
+            # Search in local movies_db first
+            for movie in self.movies_db:
+                if str(movie.id) == str(movie_id):
+                    return {
+                        'id': movie.id,
+                        'title': movie.title,
+                        'plot': movie.plot,
+                        'rating': movie.rating,
+                        'genre': movie.genre,
+                        'year': movie.year,
+                        'poster': movie.poster,
+                        'director': movie.director,
+                        'cast': movie.cast,
+                        'imdbId': movie.imdbId,
+                        'runtime': movie.runtime
+                    }
+            
+            # Try database collections if available
+            if self.movies_collection:
+                # This would be implemented based on your database structure
+                pass
+                
+        except Exception as e:
+            self.logger.warning(f"❌ Database get movie failed: {e}")
+        
+        return None
+
     async def analyze_movie(self, movie_id: str) -> str:
         """Trigger comprehensive analysis for a specific movie"""
         self.logger.info(f"🔍 Starting analysis for movie: {movie_id}")
@@ -848,46 +1313,158 @@ class MovieService:
             self.logger.warning(f"Cache check failed: {e}")
         return None
     
-    async def _search_omdb_direct(self, query: str, limit: int) -> List[Movie]:
-        """Direct OMDB API search with optimized timeout"""
+    async def _search_omdb_with_retry(self, query: str, limit: int, max_retries: int = 2) -> List[Movie]:
+        """OMDB API search with retry mechanism and proper timeout"""
+        for attempt in range(max_retries):
+            try:
+                self.logger.info(f"🎬 OMDB attempt {attempt + 1}/{max_retries} for '{query}'")
+                
+                # Check if OMDB API is available
+                if not self.api_manager.has_omdb or not self.api_manager.omdb_api:
+                    self.logger.warning("OMDB API not available")
+                    return []
+                
+                # Use the API manager's OMDB instance with proper timeout
+                omdb_results = await asyncio.wait_for(
+                    self.api_manager.omdb_api.search_movies(query, limit),
+                    timeout=8.0  # 8 second timeout as per requirements
+                )
+                
+                if omdb_results:
+                    movies = []
+                    for movie_data in omdb_results[:limit]:
+                        try:
+                            movie = self._create_movie_from_data(movie_data, f"omdb_{len(movies)}")
+                            if movie:
+                                movies.append(movie)
+                        except Exception as e:
+                            self.logger.warning(f"OMDB movie conversion error: {e}")
+                            continue
+                    
+                    if movies:
+                        self.logger.info(f"✅ OMDB SUCCESS: {len(movies)} movies found")
+                        return movies
+                
+            except asyncio.TimeoutError:
+                self.logger.warning(f"⏰ OMDB timeout on attempt {attempt + 1}")
+                if attempt < max_retries - 1:
+                    # Exponential backoff: wait 1s, then 2s
+                    await asyncio.sleep(2 ** attempt)
+                continue
+            except Exception as e:
+                self.logger.warning(f"OMDB error on attempt {attempt + 1}: {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2 ** attempt)
+                continue
+        
+        self.logger.warning("❌ OMDB failed after all retry attempts")
+        return []
+    
+    async def _search_api_manager_with_timeout(self, query: str, limit: int) -> List[Movie]:
+        """API Manager search with enhanced timeout handling"""
         try:
-            from ..core.omdb_api_enhanced import OMDbAPI
-            import os
-            from dotenv import load_dotenv
-            
-            load_dotenv()
-            omdb_api_key = os.getenv('OMDB_API_KEY', '2f777f63')
-            
-            if not omdb_api_key or omdb_api_key in ['demo_key', '', None]:
-                return []
-            
-            omdb_api = OMDbAPI(omdb_api_key)
-              # Ultra-fast timeout for real-time response
-            omdb_results = await asyncio.wait_for(
-                omdb_api.search_movies(query, limit), 
-                timeout=2.0  # Reduced to 2s for better UX
+            # Use longer timeout for API manager as it tries multiple sources
+            movie_data_list = await asyncio.wait_for(
+                self.api_manager.search_movies(query, limit),
+                timeout=10.0  # 10 second timeout for comprehensive search
             )
             
-            movies = []
-            if omdb_results:
-                for movie_data in omdb_results[:limit]:
+            if movie_data_list:
+                movies = []
+                for data in movie_data_list:
                     try:
-                        movie = self._create_movie_from_data(movie_data, f"omdb_{len(movies)}")
+                        movie = self._convert_dict_to_movie(data)
                         if movie:
                             movies.append(movie)
                     except Exception as e:
-                        self.logger.warning(f"OMDB movie conversion error: {e}")
+                        self.logger.warning(f"API Manager movie conversion error: {e}")
                         continue
-                        
-                self.logger.info(f"📡 OMDB: {len(movies)} movies found")
-            return movies
+                
+                return movies
             
         except asyncio.TimeoutError:
-            self.logger.info("⚡ OMDB timeout (2.5s) - continuing")
-            return []
+            self.logger.warning("⏰ API Manager timeout after 10s")
         except Exception as e:
-            self.logger.warning(f"OMDB search error: {e}")
-            return []
+            self.logger.warning(f"API Manager error: {e}")
+        
+        return []
+    
+    async def _search_with_web_scraping(self, query: str, limit: int) -> List[Movie]:
+        """Web scraping search as secondary option"""
+        try:
+            if not self.api_manager.scrapers and not self.api_manager.scrapy_search:
+                return []
+            
+            movies = []
+            
+            # Try Scrapy search service first (more comprehensive)
+            if self.api_manager.scrapy_search:
+                try:
+                    scrapy_results = await asyncio.wait_for(
+                        self.api_manager.scrapy_search.search_movies(query, limit),
+                        timeout=6.0  # 6 second timeout for scraping
+                    )
+                    
+                    if scrapy_results:
+                        for movie_data in scrapy_results[:limit]:
+                            try:
+                                movie = self._convert_dict_to_movie(movie_data)
+                                if movie:
+                                    movies.append(movie)
+                            except Exception as e:
+                                self.logger.warning(f"Scrapy movie conversion error: {e}")
+                                continue
+                        
+                        if movies:
+                            self.logger.info(f"🕷️ Scrapy found {len(movies)} movies")
+                            return movies
+                            
+                except asyncio.TimeoutError:
+                    self.logger.warning("⏰ Scrapy search timeout")
+                except Exception as e:
+                    self.logger.warning(f"Scrapy search error: {e}")
+            
+            # Try legacy web scrapers as fallback
+            if self.api_manager.scrapers:
+                try:
+                    scraping_results = await asyncio.wait_for(
+                        self.api_manager._search_with_scraping(query, limit),
+                        timeout=4.0  # 4 second timeout for legacy scraping
+                    )
+                    
+                    if scraping_results:
+                        for movie_data in scraping_results[:limit]:
+                            try:
+                                movie = self._convert_dict_to_movie(movie_data)
+                                if movie:
+                                    movies.append(movie)
+                            except Exception as e:
+                                self.logger.warning(f"Legacy scraping movie conversion error: {e}")
+                                continue
+                        
+                        if movies:
+                            self.logger.info(f"🕷️ Legacy scraping found {len(movies)} movies")
+                            return movies
+                            
+                except asyncio.TimeoutError:
+                    self.logger.warning("⏰ Legacy scraping timeout")
+                except Exception as e:
+                    self.logger.warning(f"Legacy scraping error: {e}")
+            
+        except Exception as e:
+            self.logger.error(f"Web scraping search failed: {e}")
+        
+        return []
+    
+    async def _cache_search_results(self, cache_key: str, movies: List[Movie]):
+        """Cache search results for future use"""
+        try:
+            if hasattr(self.api_manager, 'cache') and self.api_manager.cache and movies:
+                movie_dicts = [self._movie_to_dict(movie) for movie in movies]
+                self.api_manager.cache.set(cache_key, movie_dicts, ttl=7200)  # 2 hour cache
+                self.logger.info(f"💾 Cached {len(movies)} search results")
+        except Exception as e:
+            self.logger.warning(f"Cache save error: {e}")
     
     async def _search_local_enhanced(self, query: str, limit: int) -> List[Movie]:
         """Enhanced local search with fuzzy matching"""
@@ -1054,12 +1631,17 @@ class MovieService:
         try:
             if not movie_data:
                 return None
+            
+            # Process poster image URL
+            poster_url = self._get_enhanced_poster(movie_data)
+            source = movie_data.get('source', 'generic')
+            processed_poster = self._process_movie_image(poster_url, source)
                 
             return Movie(
                 id=movie_data.get('id', f"movie_{len(self.movies_db)}"),
                 title=movie_data.get('title', 'Unknown Title'),
                 year=int(movie_data.get('year', 2000)),
-                poster=self._get_enhanced_poster(movie_data),
+                poster=processed_poster,
                 rating=float(movie_data.get('rating', 5.0)),
                 genre=movie_data.get('genre', ['Unknown']),
                 plot=movie_data.get('plot', 'No plot available.'),

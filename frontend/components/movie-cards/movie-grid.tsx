@@ -33,7 +33,7 @@ const addToSearchHistory = (query: string) => {
 }
 
 export function MovieGrid() {
-  const { movies, isLoading, searchQuery, error, clearSearch } = useMovieContext()
+  const { movies, isLoading, searchQuery, error, clearSearch, isDemoMode, isBackendConnected } = useMovieContext()
   const [trendingMovies, setTrendingMovies] = useState<Movie[]>([])
   const [popularMovies, setPopularMovies] = useState<Movie[]>([])
   const [topRatedMovies, setTopRatedMovies] = useState<Movie[]>([])
@@ -120,11 +120,21 @@ export function MovieGrid() {
     }
   }, [searchQuery, movies])
 
-  if (isLoading && movies.length === 0) {
+  if (isLoading) {
     return (
-      <div className="space-y-12">
+      <div className="space-y-8">
+        {searchQuery && (
+          <div className="px-4 lg:px-8">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-6 h-6 border-2 border-red-600/30 border-t-red-600 rounded-full animate-spin" />
+              <h2 className="text-2xl font-bold text-white">
+                Searching for "{searchQuery}"...
+              </h2>
+            </div>
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-8 px-6 lg:px-12 max-w-screen-2xl mx-auto">
-          {Array.from({ length: 12 }).map((_, index) => (
+          {Array.from({ length: searchQuery ? 8 : 12 }).map((_, index) => (
             <MovieCardSkeleton key={index} />
           ))}
         </div>
@@ -133,23 +143,143 @@ export function MovieGrid() {
   }
 
   if (error) {
+    const getErrorType = (errorMessage: string) => {
+      if (errorMessage.includes('Network') || errorMessage.includes('fetch') || errorMessage.includes('connection')) {
+        return 'network'
+      }
+      if (errorMessage.includes('timeout')) {
+        return 'timeout'
+      }
+      if (errorMessage.includes('404') || errorMessage.includes('not found')) {
+        return 'not_found'
+      }
+      if (errorMessage.includes('500') || errorMessage.includes('server')) {
+        return 'server'
+      }
+      return 'unknown'
+    }
+
+    const errorType = getErrorType(error.toLowerCase())
+    
+    const getErrorConfig = (type: string) => {
+      switch (type) {
+        case 'network':
+          return {
+            icon: '🌐',
+            title: 'Connection Error',
+            description: 'Unable to connect to the movie database server.',
+            suggestion: 'Please check your internet connection and try again.',
+            showRetry: true
+          }
+        case 'timeout':
+          return {
+            icon: '⏱️',
+            title: 'Request Timeout',
+            description: 'The server is taking too long to respond.',
+            suggestion: 'The server may be busy. Please try again in a moment.',
+            showRetry: true
+          }
+        case 'server':
+          return {
+            icon: '🔧',
+            title: 'Server Error',
+            description: 'The movie database server encountered an error.',
+            suggestion: 'This is usually temporary. Please try again later.',
+            showRetry: true
+          }
+        case 'not_found':
+          return {
+            icon: '🔍',
+            title: 'No Results Found',
+            description: 'No movies found matching your search.',
+            suggestion: 'Try different keywords or check your spelling.',
+            showRetry: false
+          }
+        default:
+          return {
+            icon: '⚠️',
+            title: 'Search Failed',
+            description: error,
+            suggestion: 'Please try again or contact support if the problem persists.',
+            showRetry: true
+          }
+      }
+    }
+
+    const errorConfig = getErrorConfig(errorType)
+
     return (
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-12 px-4">
-        <div className="bg-gray-900/80 backdrop-blur-sm rounded-2xl p-8 max-w-md mx-auto border border-red-800">
-          <h3 className="text-xl font-semibold text-red-400 mb-2">Error</h3>
-          <p className="text-gray-400">{error}</p>
+        <div className="bg-gray-900/80 backdrop-blur-sm rounded-2xl p-8 max-w-md mx-auto border border-red-800/50">
+          <div className="text-4xl mb-4">{errorConfig.icon}</div>
+          <h3 className="text-xl font-semibold text-red-400 mb-3">{errorConfig.title}</h3>
+          <p className="text-gray-300 mb-4">{errorConfig.description}</p>
+          <p className="text-gray-400 text-sm mb-6">{errorConfig.suggestion}</p>
+          
+          {isDemoMode && (
+            <div className="bg-yellow-900/30 border border-yellow-600 rounded-lg p-3 mb-4">
+              <p className="text-yellow-300 text-sm">
+                🔄 Demo Mode Active - Limited functionality available
+              </p>
+            </div>
+          )}
+          
+          <div className="space-y-3">
+            {errorConfig.showRetry && searchQuery && (
+              <button
+                onClick={() => window.location.reload()}
+                className="w-full bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors"
+              >
+                🔄 Try Again
+              </button>
+            )}
+            <button
+              onClick={clearSearch}
+              className="w-full bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition-colors"
+            >
+              ← Back to Home
+            </button>
+          </div>
         </div>
       </motion.div>
     )
   }  if (!searchQuery) {
     return (
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5 }}>
+        {isDemoMode && (
+          <div className="bg-yellow-900/20 border-b border-yellow-600/30 px-4 py-3 mb-6">
+            <div className="max-w-screen-2xl mx-auto flex items-center justify-center">
+              <div className="flex items-center space-x-2 text-yellow-300">
+                <span className="text-lg">⚠️</span>
+                <span className="text-sm font-medium">
+                  Demo Mode: Backend unavailable - showing limited sample data
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
         <NetflixHeroBanner featuredMovie={featuredMovie} />
         <div className="space-y-8 mt-8">
-          <MovieRow title="🔥 Trending Now" movies={trendingMovies.length > 0 ? trendingMovies : movies.slice(0, 15)} />
-          <MovieRow title="⭐ Popular Movies" movies={popularMovies.length > 0 ? popularMovies : movies.slice(10, 25)} />
-          <MovieRow title="🏆 Top Rated" movies={topRatedMovies.length > 0 ? topRatedMovies : movies.filter(m => m.rating && m.rating > 8.0).slice(0, 15)} />
-          <MovieRow title="💎 Suggested Movies" movies={movies.slice(2, 17)} />
+          <MovieRow 
+            title="🔥 Trending Now" 
+            movies={trendingMovies.length > 0 ? trendingMovies : movies.slice(0, 15)} 
+            isLoading={loadingSpecialData && trendingMovies.length === 0}
+          />
+          <MovieRow 
+            title="⭐ Popular Movies" 
+            movies={popularMovies.length > 0 ? popularMovies : movies.slice(10, 25)} 
+            isLoading={loadingSpecialData && popularMovies.length === 0}
+          />
+          <MovieRow 
+            title="🏆 Top Rated" 
+            movies={topRatedMovies.length > 0 ? topRatedMovies : movies.filter(m => m.rating && m.rating > 8.0).slice(0, 15)} 
+            isLoading={loadingSpecialData && topRatedMovies.length === 0}
+          />
+          <MovieRow 
+            title="💎 Suggested Movies" 
+            movies={movies.slice(2, 17)} 
+            isLoading={loadingSpecialData}
+          />
         </div>
       </motion.div>
     )
@@ -189,8 +319,25 @@ export function MovieGrid() {
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-12 px-4">
           <div className="bg-gray-900/80 backdrop-blur-sm rounded-2xl p-8 max-w-md mx-auto border border-gray-800">
             <div className="text-6xl mb-4 opacity-50">🔍</div>
-            <h3 className="text-xl font-semibold text-white mb-2">No results found</h3>
-            <p className="text-gray-400">Try searching with different keywords or check the spelling</p>
+            <h3 className="text-xl font-semibold text-white mb-3">No results found</h3>
+            <p className="text-gray-400 mb-4">
+              No movies found for "{searchQuery}". Try searching with different keywords or check the spelling.
+            </p>
+            {isDemoMode && (
+              <div className="bg-yellow-900/30 border border-yellow-600 rounded-lg p-3 mb-4">
+                <p className="text-yellow-300 text-sm">
+                  ⚠️ Demo Mode: Limited search functionality - try connecting to the backend for full results
+                </p>
+              </div>
+            )}
+            <div className="space-y-2">
+              <p className="text-gray-500 text-sm">Suggestions:</p>
+              <ul className="text-gray-400 text-sm space-y-1">
+                <li>• Try broader search terms</li>
+                <li>• Check for typos</li>
+                <li>• Search by actor, director, or genre</li>
+              </ul>
+            </div>
           </div>
         </motion.div>
       )}

@@ -1,4 +1,6 @@
-import type { Movie, Review, AnalyticsData, SearchFilters, ApiResponse, PaginatedResponse } from '@/types/movie'
+import type { Movie, Review, AnalyticsData, SearchFilters } from '@/types/movie'
+import { clientCache, ClientCache } from './cache'
+import { queueApiCall, queuePriorityRequest } from './request-queue'
 
 // Robust API URL detection with fallbacks
 const getApiBaseUrl = () => {
@@ -119,10 +121,21 @@ export const movieApi = {
     }
   },
   async getMovies() {
-    return fetchApi<Movie[]>('/api/movies')
+    const cacheKey = 'movies:all'
+    const cached = clientCache.get<Movie[]>(cacheKey)
+    if (cached) return cached
+
+    const result = await fetchApi<Movie[]>('/api/movies')
+    clientCache.set(cacheKey, result, 30 * 60 * 1000) // Cache for 30 minutes
+    return result
   },
   async searchMovies(query: string, filters?: SearchFilters) {
     if (!query.trim()) return []
+    
+    // Generate cache key for search
+    const cacheKey = ClientCache.generateSearchKey(query, filters)
+    const cached = clientCache.get<Movie[]>(cacheKey)
+    if (cached) return cached
     
     const params = new URLSearchParams({ q: query })
     if (filters?.genre?.length) params.append('genre', filters.genre.join(','))
@@ -131,10 +144,24 @@ export const movieApi = {
     if (filters?.sortBy) params.append('sort', filters.sortBy)
     if (filters?.sortOrder) params.append('order', filters.sortOrder)
     
-    return fetchApi<Movie[]>(`/api/movies/search?${params.toString()}`)
+    // Use priority queue for search requests (high priority)
+    const result = await queuePriorityRequest(
+      () => fetchApi<Movie[]>(`/api/movies/search?${params.toString()}`),
+      `search:${query}`
+    )
+    
+    // Cache successful search results for 2 hours
+    clientCache.set(cacheKey, result, 2 * 60 * 60 * 1000)
+    return result
   },
   async getMovieById(id: string) {
-    return fetchApi<Movie>(`/api/movies/${id}`)
+    const cacheKey = ClientCache.generateMovieKey(id)
+    const cached = clientCache.get<Movie>(cacheKey)
+    if (cached) return cached
+
+    const result = await fetchApi<Movie>(`/api/movies/${id}`)
+    clientCache.set(cacheKey, result, 60 * 60 * 1000) // Cache for 1 hour
+    return result
   },
   async analyzeMovie(movieId: string) {
     return fetchApi<{taskId: string, message: string}>(`/api/movies/${movieId}/analyze`, {
@@ -147,24 +174,68 @@ export const movieApi = {
     return fetchApi<AnalyticsData>('/api/analytics')
   },
   async getPopularMovies(limit?: number) {
+    const cacheKey = ClientCache.generatePopularKey(limit)
+    const cached = clientCache.get<Movie[]>(cacheKey)
+    if (cached) return cached
+
     const params = limit ? `?limit=${limit}` : ''
-    return fetchApi<Movie[]>(`/api/movies/popular${params}`)
+    
+    // Use API queue for better concurrent request handling
+    const result = await queueApiCall(
+      () => fetchApi<Movie[]>(`/api/movies/popular${params}`),
+      `popular:${limit || 'all'}`,
+      5 // Medium-high priority
+    )
+    
+    clientCache.set(cacheKey, result, 30 * 60 * 1000) // Cache for 30 minutes
+    return result
   },
   async getRecentMovies(limit?: number) {
+    const cacheKey = `recent:${limit || 'all'}`
+    const cached = clientCache.get<Movie[]>(cacheKey)
+    if (cached) return cached
+
     const params = limit ? `?limit=${limit}` : ''
-    return fetchApi<Movie[]>(`/api/movies/recent${params}`)
+    const result = await fetchApi<Movie[]>(`/api/movies/recent${params}`)
+    clientCache.set(cacheKey, result, 15 * 60 * 1000) // Cache for 15 minutes (more recent data)
+    return result
   },
   async getTrendingMovies(limit?: number) {
+    const cacheKey = `trending:${limit || 'all'}`
+    const cached = clientCache.get<Movie[]>(cacheKey)
+    if (cached) return cached
+
     const params = limit ? `?limit=${limit}` : ''
-    return fetchApi<Movie[]>(`/api/movies/trending${params}`)
+    
+    // Use API queue for trending movies with high priority
+    const result = await queueApiCall(
+      () => fetchApi<Movie[]>(`/api/movies/trending${params}`),
+      `trending:${limit || 'all'}`,
+      8 // High priority for trending content
+    )
+    
+    clientCache.set(cacheKey, result, 15 * 60 * 1000) // Cache for 15 minutes (trending changes frequently)
+    return result
   },
   async getSuggestions(limit?: number) {
+    const cacheKey = `suggestions:${limit || 'all'}`
+    const cached = clientCache.get<Movie[]>(cacheKey)
+    if (cached) return cached
+
     const params = limit ? `?limit=${limit}` : ''
-    return fetchApi<Movie[]>(`/api/movies/suggestions${params}`)
+    const result = await fetchApi<Movie[]>(`/api/movies/suggestions${params}`)
+    clientCache.set(cacheKey, result, 30 * 60 * 1000) // Cache for 30 minutes
+    return result
   },
   async getTopRatedMovies(limit?: number) {
+    const cacheKey = `top-rated:${limit || 'all'}`
+    const cached = clientCache.get<Movie[]>(cacheKey)
+    if (cached) return cached
+
     const params = limit ? `?limit=${limit}` : ''
-    return fetchApi<Movie[]>(`/api/movies/top-rated${params}`)
+    const result = await fetchApi<Movie[]>(`/api/movies/top-rated${params}`)
+    clientCache.set(cacheKey, result, 60 * 60 * 1000) // Cache for 1 hour (top rated changes slowly)
+    return result
   },
   async getMovieReviews(movieId: string) {
     return fetchApi<Review[]>(`/api/movies/${movieId}/reviews`)
