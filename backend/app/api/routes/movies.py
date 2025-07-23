@@ -14,6 +14,7 @@ from ...models.movie import Movie, Review, AnalyticsData, SentimentData, RatingD
 from ...services.movie_service import MovieService
 from ...services.comprehensive_movie_service_working import ComprehensiveMovieService
 from ...services.image_cache_service import ImageCacheService
+from ...core.service_manager import service_manager
 from ...core.error_handler import (
     error_handler, 
     ErrorSeverity, 
@@ -26,10 +27,10 @@ from ...core.error_handler import (
 
 router = APIRouter(prefix="/api/movies", tags=["movies"])
 
-# Initialize services and logger
-movie_service = MovieService()
-comprehensive_service = ComprehensiveMovieService()
-image_cache_service = ImageCacheService()
+# Get singleton service instances to prevent multiple initializations
+movie_service = service_manager.get_movie_service()
+comprehensive_service = service_manager.get_comprehensive_service()
+image_cache_service = service_manager.get_image_cache_service()
 logger = logging.getLogger(__name__)
 
 # Health check endpoint
@@ -141,10 +142,23 @@ async def process_movie_images(movies: List[Movie], use_dynamic_loading: bool = 
                 # Clean the poster URL first
                 clean_poster_url = movie.poster.replace('\n', '').replace('\r', '').replace(' ', '').strip()
                 
+                # Check if it's already a proxy URL to prevent circular references
+                if '/api/images/image-proxy' in clean_poster_url:
+                    # If it's already a proxy URL, just ensure it has the correct base
+                    if not clean_poster_url.startswith('http'):
+                        base_url = os.getenv('BACKEND_URL', 'http://localhost:8000')
+                        movie.poster = f"{base_url}{clean_poster_url}"
+                    else:
+                        movie.poster = clean_poster_url
+                    logger.debug(f"🔄 Using existing proxy URL for {movie.title}: {movie.poster}")
+                    continue
+                
                 if use_dynamic_loading:
-                    # For dynamic loading (searches), always use enhanced proxy service
+                    # For dynamic loading (searches), always use enhanced proxy service with FULL URL
                     from urllib.parse import quote
-                    proxy_url = f"/api/images/image-proxy?url={quote(clean_poster_url)}"
+                    # Construct full backend URL for frontend consumption
+                    base_url = os.getenv('BACKEND_URL', 'http://localhost:8000')
+                    proxy_url = f"{base_url}/api/images/image-proxy?url={quote(clean_poster_url)}"
                     movie.poster = proxy_url
                     logger.debug(f"🔄 Dynamic enhanced proxy URL for {movie.title}: {proxy_url}")
                 else:
@@ -159,16 +173,18 @@ async def process_movie_images(movies: List[Movie], use_dynamic_loading: bool = 
                             movie.poster = cached_url
                             logger.debug(f"✅ Using cached image for {movie.title}: {cached_url}")
                         else:
-                            # Fallback to enhanced proxy service
+                            # Fallback to enhanced proxy service with FULL URL
                             from urllib.parse import quote
-                            proxy_url = f"/api/images/image-proxy?url={quote(clean_poster_url)}"
+                            base_url = os.getenv('BACKEND_URL', 'http://localhost:8000')
+                            proxy_url = f"{base_url}/api/images/image-proxy?url={quote(clean_poster_url)}"
                             movie.poster = proxy_url
                             logger.debug(f"🔄 Fallback to enhanced proxy for {movie.title}: {proxy_url}")
                     except Exception as cache_error:
                         logger.warning(f"⚠️ Cache service error for {movie.title}: {cache_error}")
-                        # Fallback to enhanced proxy service
+                        # Fallback to enhanced proxy service with FULL URL
                         from urllib.parse import quote
-                        proxy_url = f"/api/images/image-proxy?url={quote(clean_poster_url)}"
+                        base_url = os.getenv('BACKEND_URL', 'http://localhost:8000')
+                        proxy_url = f"{base_url}/api/images/image-proxy?url={quote(clean_poster_url)}"
                         movie.poster = proxy_url
                         logger.debug(f"🔄 Error fallback to enhanced proxy for {movie.title}: {proxy_url}")
         return movies
@@ -2091,22 +2107,40 @@ async def proxy_image_redirect(request: Request, url: str):
 
 # Movie by ID route - MUST be at the end to avoid catching other routes
 @router.get("/{movie_id}", response_model=Movie)
-async def get_movie(movie_id: str):
-    """Get movie details by ID"""
+async def get_movie(movie_id: str, request: Request):
+    """Get movie details by ID with proper image processing"""
+    request_id = get_request_id(request)
+    
     try:
+        logger.info(f"🎬 Getting movie by ID: {movie_id} (request_id: {request_id})")
         movie = await movie_service.get_movie_by_id(movie_id)
         
         if not movie:
+            logger.warning(f"❌ Movie not found: {movie_id} (request_id: {request_id})")
             raise HTTPException(
                 status_code=404, 
                 detail=f"Movie with ID '{movie_id}' not found"
             )
         
-        return movie
+        # Process images for individual movie view
+        movies_list = [movie]
+        processed_movies = await process_movie_images(movies_list, use_dynamic_loading=True)
+        processed_movie = processed_movies[0] if processed_movies else movie
+        
+        logger.info(f"✅ Movie found: {processed_movie.title} (request_id: {request_id})")
+        return processed_movie
+        
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"❌ Error getting movie {movie_id}: {e} (request_id: {request_id})")
+        error_handler.log_error(
+            e,
+            severity=ErrorSeverity.HIGH,
+            context={"movie_id": movie_id, "endpoint": "get_movie"},
+            request_id=request_id
+        )
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve movie: {str(e)}")
 
 def _create_frontend_summary(reddit_analysis: Dict) -> Dict:
     """Convert Reddit analyzer output to frontend-compatible summary format"""

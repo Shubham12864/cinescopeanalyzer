@@ -8,8 +8,14 @@ import { MovieSuggestions } from "@/components/suggestions/movie-suggestions"
 import { PopularMoviesSection } from "@/components/sections/popular-movies-section"
 import { TopRatedMoviesSection } from "@/components/sections/top-rated-movies-section"
 import { RecentMoviesSection } from "@/components/sections/recent-movies-section"
+import { useMovieContext } from "@/contexts/movie-context"
 
 export default function HomePage() {
+  const { searchQuery, movies } = useMovieContext()
+  
+  // Show search results immediately when user searches
+  const hasSearchResults = searchQuery && searchQuery.trim().length > 0
+
   return (
     <div className="flex min-h-screen bg-black">
       <Navigation />
@@ -24,26 +30,46 @@ export default function HomePage() {
           {/* Hero Section */}
           <Hero />
           
-          {/* Dynamic Movie Sections */}
-          <div className="container mx-auto px-4 py-8 space-y-12">
-            {/* Movie Suggestions - Dynamic suggestions that change every minute */}
-            <MovieSuggestions />
-
-            {/* Popular Movies - Most popular movies */}
-            <PopularMoviesSection />
-
-            {/* Top Rated Movies - Highest rated movies */}
-            <TopRatedMoviesSection />
-
-            {/* Recent Movies - Latest movies */}
-            <RecentMoviesSection />
-            
-            {/* All Movies Grid - General movie browsing */}
-            <div className="mt-12">
-              <h2 className="text-2xl font-bold text-white mb-6">Browse All Movies</h2>
+          {/* Search Results Section - Show at TOP when searching */}
+          {hasSearchResults ? (
+            <div id="search-results" className="container mx-auto px-4 py-8">
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+                className="mb-8"
+              >
+                <h2 className="text-3xl font-bold text-white mb-2">
+                  Search Results for "{searchQuery}"
+                </h2>
+                <p className="text-gray-400">
+                  {movies.length === 0 ? 'No results found' : `Found ${movies.length} movie${movies.length !== 1 ? 's' : ''}`}
+                </p>
+              </motion.div>
               <MovieGrid />
             </div>
-          </div>
+          ) : (
+            /* Default Home Sections - Only show when NOT searching */
+            <div className="container mx-auto px-4 py-8 space-y-12">
+              {/* Movie Suggestions - Dynamic suggestions that change every minute */}
+              <MovieSuggestions />
+
+              {/* Popular Movies - Most popular movies */}
+              <PopularMoviesSection />
+
+              {/* Top Rated Movies - Highest rated movies */}
+              <TopRatedMoviesSection />
+
+              {/* Recent Movies - Latest movies */}
+              <RecentMoviesSection />
+              
+              {/* All Movies Grid - General movie browsing */}
+              <div className="mt-12">
+                <h2 className="text-2xl font-bold text-white mb-6">Browse All Movies</h2>
+                <MovieGrid />
+              </div>
+            </div>
+          )}
         </motion.div>
       </main>
     </div>

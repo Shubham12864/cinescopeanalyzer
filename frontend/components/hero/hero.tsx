@@ -16,7 +16,25 @@ export function Hero() {
     if (searchInput.trim()) {
       setSearchQuery(searchInput)
       try {
+        // Scroll to search results after searching
         await searchMoviesHandler(searchInput)
+        
+        // Smooth scroll to results section
+        setTimeout(() => {
+          const searchResultsSection = document.getElementById('search-results')
+          if (searchResultsSection) {
+            searchResultsSection.scrollIntoView({ 
+              behavior: 'smooth', 
+              block: 'start' 
+            })
+          } else {
+            // If no specific section, scroll past hero
+            window.scrollTo({ 
+              top: window.innerHeight * 0.7, 
+              behavior: 'smooth' 
+            })
+          }
+        }, 100)
       } catch (error) {
         console.error('Search failed:', error)
       }

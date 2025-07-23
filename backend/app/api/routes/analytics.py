@@ -3,11 +3,12 @@ import logging
 import random
 from typing import Dict
 from ...services.movie_service import MovieService
+from ...core.service_manager import service_manager
 
 router = APIRouter(prefix="/api", tags=["analytics"])
 
-# Initialize services
-movie_service = MovieService()
+# Get singleton service instance to prevent multiple initializations
+movie_service = service_manager.get_movie_service()
 logger = logging.getLogger(__name__)
 
 @router.get("/analytics")

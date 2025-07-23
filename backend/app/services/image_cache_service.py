@@ -210,7 +210,14 @@ class ImageCacheService:
             try:
                 # Download the image
                 local_filename = f"{cache_id}.{extension}"
-                local_path = self.cache_dir / image_type.lower() / local_filename
+                # Map image types to directory names
+                dir_mapping = {
+                    "poster": "posters",
+                    "backdrop": "backdrops", 
+                    "thumbnail": "thumbnails"
+                }
+                image_dir = dir_mapping.get(image_type.lower(), "posters")
+                local_path = self.cache_dir / image_dir / local_filename
                 
                 async with aiohttp.ClientSession() as session:
                     async with session.get(original_url, timeout=aiohttp.ClientTimeout(total=30)) as response:
@@ -251,20 +258,24 @@ class ImageCacheService:
         )
         
         with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                INSERT INTO cached_images (
-                    id, movie_id, image_type, original_url, local_path, cached_url,
-                    width, height, file_size, format, is_downloaded, created_at, last_accessed, access_count
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                cached_image.id, cached_image.movie_id, cached_image.image_type,
-                cached_image.original_url, cached_image.local_path, cached_image.cached_url,
-                cached_image.width, cached_image.height, cached_image.file_size,
-                cached_image.format, cached_image.is_downloaded,
-                cached_image.created_at.isoformat(), cached_image.last_accessed.isoformat(),
-                cached_image.access_count
-            ))
-            conn.commit()
+            try:
+                conn.execute("""
+                    INSERT OR REPLACE INTO cached_images (
+                        id, movie_id, image_type, original_url, local_path, cached_url,
+                        width, height, file_size, format, is_downloaded, created_at, last_accessed, access_count
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    cached_image.id, cached_image.movie_id, cached_image.image_type,
+                    cached_image.original_url, cached_image.local_path, cached_image.cached_url,
+                    cached_image.width, cached_image.height, cached_image.file_size,
+                    cached_image.format, cached_image.is_downloaded,
+                    cached_image.created_at.isoformat(), cached_image.last_accessed.isoformat(),
+                    cached_image.access_count
+                ))
+                conn.commit()
+            except Exception as db_error:
+                logger.warning(f"⚠️ Database error when caching image: {db_error}")
+                # Continue execution even if database fails
         
         logger.info(f"🖼️  Cached image: {movie_id}/{image_type} -> {cached_url}")
         return cached_image

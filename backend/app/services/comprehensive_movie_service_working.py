@@ -15,9 +15,15 @@ from ..core.api_manager import APIManager
 class ComprehensiveMovieService:
     """Enhanced movie service with multi-source data integration"""
     
-    def __init__(self):
+    def __init__(self, api_manager=None):
         self.movies_db = []
-        self.api_manager = APIManager()
+        
+        # Use provided api_manager or create new one (for singleton pattern)
+        if api_manager is not None:
+            self.api_manager = api_manager
+        else:
+            self.api_manager = APIManager()
+            
         self.logger = logging.getLogger(__name__)
         
     def _analyze_sentiment_simple(self, text: str) -> str:

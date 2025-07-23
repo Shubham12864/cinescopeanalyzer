@@ -221,5 +221,12 @@ class FixedOMDbAPI:
                 pass
 
 
-# Create a global instance
-omdb_service = FixedOMDbAPI()
+# Create a global instance with proper API key loading
+import os
+from dotenv import load_dotenv
+
+# Load .env from the backend directory
+backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+load_dotenv(os.path.join(backend_dir, '.env'))
+api_key = os.getenv("OMDB_API_KEY")
+omdb_service = FixedOMDbAPI(api_key)

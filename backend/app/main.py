@@ -30,7 +30,8 @@ from .core.error_handler import (
 )
 
 # Load environment variables
-load_dotenv()
+import os
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
 app = FastAPI(
     title="CineScope Movie Analysis API - Enhanced Edition",
@@ -130,8 +131,8 @@ async def api_health_check():
 @app.get("/api/analytics")
 async def get_analytics():
     """Get overall analytics data"""
-    from .services.movie_service import MovieService
-    movie_service = MovieService()
+    from .core.service_manager import service_manager
+    movie_service = service_manager.get_movie_service()
     analytics = await movie_service.get_analytics()
     return analytics
 
