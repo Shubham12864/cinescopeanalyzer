@@ -3,7 +3,7 @@ import logging
 import os
 from typing import List, Optional, Dict, Any
 from dotenv import load_dotenv
-from .omdb_api_enhanced import OMDbAPI  # Use enhanced OMDB API
+from .omdb_api_fixed import FixedOMDbAPI  # Use fixed OMDB API
 from .tmdb_api import TMDBApi
 from .hybrid_cache import HybridCache
 
@@ -26,6 +26,14 @@ except ImportError as e:
     # Handle missing scrapy dependencies gracefully
     SCRAPY_SEARCH_AVAILABLE = False
     logging.warning(f"Scrapy search service not available: {e}")
+
+# Import robust scraping service (always available)
+try:
+    from ..services.robust_scraping_service import robust_scraping_service
+    ROBUST_SCRAPING_AVAILABLE = True
+except ImportError as e:
+    ROBUST_SCRAPING_AVAILABLE = False
+    logging.warning(f"Robust scraping service not available: {e}")
 
 load_dotenv()
 
@@ -68,7 +76,7 @@ class APIManager:
         
         # Initialize APIs with error handling
         try:
-            self.omdb_api = OMDbAPI(omdb_key or "demo_key")
+            self.omdb_api = FixedOMDbAPI(omdb_key or "demo_key")
         except Exception as e:
             self.logger.error(f"❌ OMDB API initialization failed: {e}")
             self.omdb_api = None
@@ -98,6 +106,16 @@ class APIManager:
             except Exception as e:
                 self.logger.warning(f"Failed to initialize Scrapy search: {e}")
                 self.scrapy_search = None
+        
+        # Initialize robust scraping service (fallback)
+        self.robust_scraping = None
+        if ROBUST_SCRAPING_AVAILABLE:
+            try:
+                self.robust_scraping = robust_scraping_service
+                self.logger.info("🔧 Robust scraping service initialized")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize robust scraping: {e}")
+                self.robust_scraping = None
           # Initialize scrapers if available  
         self.scrapers = {}
         if SCRAPERS_AVAILABLE:
@@ -116,9 +134,10 @@ class APIManager:
         # Log initialization status with new priority order
         self.logger.info("🎯 API Priority Order:")
         self.logger.info(f"   1️⃣ OMDB API: {'ENABLED' if omdb_key != 'demo_key' else 'DEMO MODE'}")
-        self.logger.info(f"   2️⃣ Scrapy Search: {'ENABLED' if self.scrapy_search else 'DISABLED'}")
-        self.logger.info(f"   3️⃣ Web Scraping: {'ENABLED' if self.scrapers else 'DISABLED'}")
-        self.logger.info(f"   4️⃣ TMDB API: {'ENABLED' if tmdb_key != 'demo_key_12345' else 'DEMO MODE'}")
+        self.logger.info(f"   2️⃣ Robust Scraping: {'ENABLED' if self.robust_scraping else 'DISABLED'}")
+        self.logger.info(f"   3️⃣ Scrapy Search: {'ENABLED' if self.scrapy_search else 'DISABLED'}")
+        self.logger.info(f"   4️⃣ Legacy Scraping: {'ENABLED' if self.scrapers else 'DISABLED'}")
+        self.logger.info(f"   5️⃣ TMDB API: {'ENABLED' if tmdb_key != 'demo_key_12345' else 'DEMO MODE'}")
         self.logger.info("💾 Free Redis-like cache system: ENABLED")
         
     async def search_movies(self, query: str, limit: int = 20) -> List[Dict]:
@@ -146,9 +165,24 @@ class APIManager:
             self.cache.set(cache_key, normalized[:limit], ttl=7200)
             return normalized[:limit]
             
-        # Priority 2: Scrapy Search (comprehensive web scraping)
+        # Priority 2: Robust Scraping (reliable web scraping without Chrome)
+        if self.robust_scraping:
+            self.logger.info("🔧 Priority 2: Trying robust scraping...")
+            try:
+                robust_results = await self.robust_scraping.search_movies_multiple_sources(query, limit)
+                if robust_results:
+                    # Normalize the results to match expected format
+                    normalized_results = [self._normalize_movie_dict(r) for r in robust_results]
+                    self.logger.info(f"✅ ROBUST SCRAPING SUCCESS: Got {len(normalized_results)} movies")
+                    # Cache robust scraping results for 4 hours (high quality, stable data)
+                    self.cache.set(cache_key, normalized_results[:limit], ttl=14400)
+                    return normalized_results[:limit]
+            except Exception as e:
+                self.logger.error(f"❌ Robust scraping failed: {e}")
+            
+        # Priority 3: Scrapy Search (comprehensive web scraping)
         if self.scrapy_search:
-            self.logger.info("🕷️ Priority 2: Trying Scrapy search...")
+            self.logger.info("🕷️ Priority 3: Trying Scrapy search...")
             try:
                 scrapy_results = await self.scrapy_search.search_movies(query, limit)
                 if scrapy_results:
@@ -159,9 +193,9 @@ class APIManager:
             except Exception as e:
                 self.logger.error(f"❌ Scrapy search failed: {e}")
             
-        # Priority 3: Legacy web scraping (better than TMDB for detailed data)
+        # Priority 4: Legacy web scraping (better than TMDB for detailed data)
         if self.scrapers:
-            self.logger.info("🕷️ Priority 3: Trying legacy web scraping...")
+            self.logger.info("🕷️ Priority 4: Trying legacy web scraping...")
             try:
                 scraping_results = await self._search_with_scraping(query, limit)
                 if scraping_results:
@@ -172,8 +206,8 @@ class APIManager:
             except Exception as e:
                 self.logger.error(f"❌ Legacy scraping failed: {e}")
                   
-        # Priority 4: TMDB API (last resort for live data)
-        self.logger.info("🎭 Priority 4: Trying TMDB API (OMDB + Scrapy failed)...")
+        # Priority 5: TMDB API (last resort for live data)
+        self.logger.info("🎭 Priority 5: Trying TMDB API (all scraping failed)...")
         try:
             tmdb_results = await self.tmdb_api.search_movies(query, limit)
             self.logger.info(f"🎭 TMDB returned {len(tmdb_results)} results")
@@ -189,7 +223,7 @@ class APIManager:
         except Exception as e:
             self.logger.error(f"❌ TMDB search failed: {e}")
             
-        # Priority 5: Return empty results instead of demo data
+        # Priority 6: Return empty results instead of demo data
         self.logger.warning(f"❌ All API sources failed for query '{query}' - returning empty results")
         return []
     

@@ -85,7 +85,7 @@ MONGODB_DB_NAME=cinescope
 ENVIRONMENT=development
 DEBUG=true
 CACHE_TTL=3600
-SCRAPING_ENABLED=false
+SCRAPING_ENABLED=true
 '''
             try:
                 with open(env_file, 'w') as f:

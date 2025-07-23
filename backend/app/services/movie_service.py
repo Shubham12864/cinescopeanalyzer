@@ -38,10 +38,171 @@ class MovieService:
     
     def _init_demo_data(self):
         """Initialize with demo movie data"""
-        # Don't initialize demo data immediately - wait for real API calls
-        # Only use demo data as absolute fallback
+        # Initialize with popular movies that have real poster URLs
         self.movies_db = []
-        self.logger.info("🚀 MovieService initialized - will load real data on first request")
+        self.logger.info("🚀 MovieService initialized - loading popular movies with real images")
+        
+        # Load popular movies with real IMDB poster URLs
+        self._load_popular_movies_with_real_images()
+    
+    def _load_popular_movies_with_real_images(self):
+        """Load popular movies with real IMDB poster URLs"""
+        try:
+            # Popular movies with real IMDB IDs and poster URLs
+            popular_movies_data = [
+                {
+                    "id": "tt0111161",
+                    "title": "The Shawshank Redemption",
+                    "year": 1994,
+                    "poster": "https://m.media-amazon.com/images/M/MV5BNDE3ODcxYzMtY2YzZC00NmNlLWJiNDMtZDViZWM2MzIxZDYwXkEyXkFqcGdeQXVyNjAwNDUxODI@._V1_SX300.jpg",
+                    "rating": 9.3,
+                    "genre": ["Drama"],
+                    "plot": "Two imprisoned men bond over a number of years, finding solace and eventual redemption through acts of common decency.",
+                    "director": "Frank Darabont",
+                    "cast": ["Tim Robbins", "Morgan Freeman"],
+                    "runtime": 142
+                },
+                {
+                    "id": "tt0068646",
+                    "title": "The Godfather",
+                    "year": 1972,
+                    "poster": "https://m.media-amazon.com/images/M/MV5BM2MyNjYxNmUtYTAwNi00MTYxLWJmNWYtYzZlODY3ZTk3OTFlXkEyXkFqcGdeQXVyNzAwMjU2MjU@._V1_SX300.jpg",
+                    "rating": 9.2,
+                    "genre": ["Crime", "Drama"],
+                    "plot": "The aging patriarch of an organized crime dynasty transfers control of his clandestine empire to his reluctant son.",
+                    "director": "Francis Ford Coppola",
+                    "cast": ["Marlon Brando", "Al Pacino"],
+                    "runtime": 175
+                },
+                {
+                    "id": "tt0468569",
+                    "title": "The Dark Knight",
+                    "year": 2008,
+                    "poster": "https://m.media-amazon.com/images/M/MV5BMTMxNTMwODM0NF5BMl5BanBnXkFtZTcwODAyMTk2Mw@@._V1_SX300.jpg",
+                    "rating": 9.0,
+                    "genre": ["Action", "Crime", "Drama"],
+                    "plot": "When the menace known as the Joker wreaks havoc and chaos on the people of Gotham, Batman must accept one of the greatest psychological and physical tests of his ability to fight injustice.",
+                    "director": "Christopher Nolan",
+                    "cast": ["Christian Bale", "Heath Ledger", "Aaron Eckhart"],
+                    "runtime": 152
+                },
+                {
+                    "id": "tt0110912",
+                    "title": "Pulp Fiction",
+                    "year": 1994,
+                    "poster": "https://m.media-amazon.com/images/M/MV5BNGNhMDIzZTUtNTBlZi00MTRlLWFjM2ItYzViMjE3YzI5MjljXkEyXkFqcGdeQXVyNzkwMjQ5NzM@._V1_SX300.jpg",
+                    "rating": 8.9,
+                    "genre": ["Crime", "Drama"],
+                    "plot": "The lives of two mob hitmen, a boxer, a gangster and his wife, and a pair of diner bandits intertwine in four tales of violence and redemption.",
+                    "director": "Quentin Tarantino",
+                    "cast": ["John Travolta", "Uma Thurman", "Samuel L. Jackson"],
+                    "runtime": 154
+                },
+                {
+                    "id": "tt1375666",
+                    "title": "Inception",
+                    "year": 2010,
+                    "poster": "https://m.media-amazon.com/images/M/MV5BMjAxMzY3NjcxNF5BMl5BanBnXkFtZTcwNTI5OTM0Mw@@._V1_SX300.jpg",
+                    "rating": 8.8,
+                    "genre": ["Action", "Sci-Fi", "Thriller"],
+                    "plot": "A thief who steals corporate secrets through the use of dream-sharing technology is given the inverse task of planting an idea into the mind of a C.E.O.",
+                    "director": "Christopher Nolan",
+                    "cast": ["Leonardo DiCaprio", "Marion Cotillard", "Tom Hardy"],
+                    "runtime": 148
+                },
+                {
+                    "id": "tt0133093",
+                    "title": "The Matrix",
+                    "year": 1999,
+                    "poster": "https://m.media-amazon.com/images/M/MV5BNzQzOTk3OTAtNDQ0Zi00ZTVkLWI0MTEtMDllZjNkYzNjNTc4L2ltYWdlXkEyXkFqcGdeQXVyNjU0OTQ0OTY@._V1_SX300.jpg",
+                    "rating": 8.7,
+                    "genre": ["Action", "Sci-Fi"],
+                    "plot": "A computer hacker learns from mysterious rebels about the true nature of his reality and his role in the war against its controllers.",
+                    "director": "The Wachowskis",
+                    "cast": ["Keanu Reeves", "Laurence Fishburne", "Carrie-Anne Moss"],
+                    "runtime": 136
+                },
+                {
+                    "id": "tt0109830",
+                    "title": "Forrest Gump",
+                    "year": 1994,
+                    "poster": "https://m.media-amazon.com/images/M/MV5BNWIwODRlZTUtY2U3ZS00Yzg1LWJhNzYtMmZiYmEyNmU1NjMzXkEyXkFqcGdeQXVyMTQxNzMzNDI@._V1_SX300.jpg",
+                    "rating": 8.8,
+                    "genre": ["Drama", "Romance"],
+                    "plot": "The presidencies of Kennedy and Johnson, the Vietnam War, the Watergate scandal and other historical events unfold from the perspective of an Alabama man with an IQ of 75.",
+                    "director": "Robert Zemeckis",
+                    "cast": ["Tom Hanks", "Robin Wright", "Gary Sinise"],
+                    "runtime": 142
+                },
+                {
+                    "id": "tt0167260",
+                    "title": "The Lord of the Rings: The Return of the King",
+                    "year": 2003,
+                    "poster": "https://m.media-amazon.com/images/M/MV5BNzA5ZDNlZWMtM2NhNS00NDJjLTk4NDItYTRmY2EwMWI5MTktXkEyXkFqcGdeQXVyNzkwMjQ5NzM@._V1_SX300.jpg",
+                    "rating": 8.9,
+                    "genre": ["Action", "Adventure", "Drama"],
+                    "plot": "Gandalf and Aragorn lead the World of Men against Sauron's army to draw his gaze from Frodo and Sam as they approach Mount Doom with the One Ring.",
+                    "director": "Peter Jackson",
+                    "cast": ["Elijah Wood", "Viggo Mortensen", "Ian McKellen"],
+                    "runtime": 201
+                }
+            ]
+            
+            # Convert to Movie objects
+            for movie_data in popular_movies_data:
+                movie = Movie(
+                    id=movie_data["id"],
+                    title=movie_data["title"],
+                    year=movie_data["year"],
+                    poster=movie_data["poster"],
+                    rating=movie_data["rating"],
+                    genre=movie_data["genre"],
+                    plot=movie_data["plot"],
+                    director=movie_data["director"],
+                    cast=movie_data["cast"],
+                    reviews=[],
+                    imdbId=movie_data["id"],
+                    runtime=movie_data["runtime"]
+                )
+                self.movies_db.append(movie)
+            
+            self.logger.info(f"✅ Loaded {len(self.movies_db)} popular movies with real images")
+            
+        except Exception as e:
+            self.logger.error(f"Error loading popular movies: {e}")
+    
+    def _search_in_loaded_movies(self, query: str, limit: int) -> List[Movie]:
+        """Search in the loaded movies database"""
+        try:
+            query_lower = query.lower().strip()
+            matching_movies = []
+            
+            for movie in self.movies_db:
+                # Check if query matches title, director, cast, or genre
+                if (query_lower in movie.title.lower() or
+                    query_lower in movie.director.lower() or
+                    any(query_lower in actor.lower() for actor in movie.cast) or
+                    any(query_lower in genre.lower() for genre in movie.genre)):
+                    matching_movies.append(movie)
+            
+            # Sort by relevance (exact title matches first, then partial matches)
+            def relevance_score(movie):
+                title_lower = movie.title.lower()
+                if title_lower == query_lower:
+                    return 3  # Exact match
+                elif title_lower.startswith(query_lower):
+                    return 2  # Starts with query
+                elif query_lower in title_lower:
+                    return 1  # Contains query
+                else:
+                    return 0  # Other matches (director, cast, genre)
+            
+            matching_movies.sort(key=relevance_score, reverse=True)
+            return matching_movies[:limit]
+            
+        except Exception as e:
+            self.logger.error(f"Error searching in loaded movies: {e}")
+            return []
     
     def _generate_cache_key(self, query: str, limit: int = 20) -> str:
         """Generate cache key for search queries"""
@@ -338,10 +499,10 @@ class MovieService:
             except Exception as omdb_error:
                 self.logger.warning(f"⚠️ OMDB API failed: {omdb_error}")
             
-            # STEP 2: Web scraping as secondary option (before cache)
-            scraping_results = await self._search_with_web_scraping(query, limit)
+            # STEP 2: Robust web scraping as secondary option (before cache)
+            scraping_results = await self._search_with_robust_scraping(query, limit)
             if scraping_results:
-                self.logger.info(f"✅ Web Scraping SUCCESS: {len(scraping_results)} movies")
+                self.logger.info(f"✅ Robust Scraping SUCCESS: {len(scraping_results)} movies")
                 await self._cache_search_results(f"search:{query.lower()}:{limit}", scraping_results)
                 return scraping_results[:limit]
             
@@ -361,7 +522,13 @@ class MovieService:
                     self.logger.info(f"💾 Database FALLBACK - returning {len(movies)} results")
                     return movies[:limit]
             
-            # STEP 5: Return empty results instead of demo data (absolute last resort)
+            # STEP 5: Search in loaded movies as fallback
+            local_results = self._search_in_loaded_movies(query, limit)
+            if local_results:
+                self.logger.info(f"🏠 Local search SUCCESS: {len(local_results)} movies")
+                return local_results
+            
+            # STEP 6: Return empty results (absolute last resort)
             elapsed = (time.time() - start_time) * 1000
             self.logger.warning(f"❌ No results found for '{query}' after {elapsed:.0f}ms - returning empty list")
             return []
@@ -607,6 +774,52 @@ class MovieService:
         self.logger.info(f"✅ Analysis complete for {movie.title}: {len(movie.reviews)} reviews, {movie.rating} rating")
         return analysis_data
     
+    async def _search_with_robust_scraping(self, query: str, limit: int) -> List[Movie]:
+        """Search using robust scraping service (no Chrome dependencies)"""
+        try:
+            if hasattr(self.api_manager, 'robust_scraping') and self.api_manager.robust_scraping:
+                self.logger.info(f"🔧 Using robust scraping for: {query}")
+                
+                # Get results from robust scraping service
+                scraping_results = await self.api_manager.robust_scraping.search_movies_multiple_sources(query, limit)
+                
+                if scraping_results:
+                    # Convert dict results to Movie objects
+                    movies = []
+                    for movie_data in scraping_results:
+                        try:
+                            movie = Movie(
+                                id=movie_data.get('id', movie_data.get('imdbId', f'scraped_{len(movies)}')),
+                                title=movie_data.get('title', 'Unknown Title'),
+                                plot=movie_data.get('plot', 'No plot available.'),
+                                rating=float(movie_data.get('rating', 5.0)),
+                                genre=movie_data.get('genre', ['Unknown']),
+                                year=int(movie_data.get('year', 2000)),
+                                poster=movie_data.get('poster', ''),
+                                director=movie_data.get('director', 'Unknown Director'),
+                                cast=movie_data.get('cast', ['Unknown Cast']),
+                                reviews=[],
+                                imdbId=movie_data.get('imdbId', movie_data.get('id')),
+                                runtime=int(movie_data.get('runtime', 120))
+                            )
+                            movies.append(movie)
+                        except Exception as e:
+                            self.logger.warning(f"Failed to convert scraped movie data: {e}")
+                            continue
+                    
+                    self.logger.info(f"✅ Robust scraping converted {len(movies)} movies")
+                    return movies
+                else:
+                    self.logger.info("🔧 Robust scraping returned no results")
+                    return []
+            else:
+                self.logger.warning("🔧 Robust scraping service not available")
+                return []
+                
+        except Exception as e:
+            self.logger.error(f"❌ Robust scraping failed: {e}")
+            return []
+
     async def _search_omdb_with_retry(self, query: str, limit: int, timeout: float = 8.0) -> List[Movie]:
         """Search OMDB API with retry mechanism and proper timeout"""
         import asyncio
