@@ -82,6 +82,8 @@ EOF
       run: |
         cd frontend
         npm run build
+      env:
+        NEXT_PUBLIC_API_URL: https://cinescopeanalyzer-production.up.railway.app
     
     - name: Run frontend tests
       run: |
@@ -139,8 +141,8 @@ EOF
         file: ./backend/Dockerfile
         push: true
         tags: |
-          ghcr.io/${{ github.repository }}/backend:latest
-          ghcr.io/${{ github.repository }}/backend:${{ github.sha }}
+          ghcr.io/${{ github.repository_owner }}/cinescopeanalyzer-backend:latest
+          ghcr.io/${{ github.repository_owner }}/cinescopeanalyzer-backend:${{ github.sha }}
     
     - name: Build and push frontend
       uses: docker/build-push-action@v5
@@ -149,8 +151,8 @@ EOF
         file: ./frontend/Dockerfile
         push: true
         tags: |
-          ghcr.io/${{ github.repository }}/frontend:latest
-          ghcr.io/${{ github.repository }}/frontend:${{ github.sha }}
+          ghcr.io/${{ github.repository_owner }}/cinescopeanalyzer-frontend:latest
+          ghcr.io/${{ github.repository_owner }}/cinescopeanalyzer-frontend:${{ github.sha }}
 
   # Deploy to Railway
   deploy-railway:
@@ -177,6 +179,25 @@ EOF
     steps:
     - uses: actions/checkout@v4
     
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+    
+    - name: Install dependencies
+      run: |
+        cd frontend
+        npm ci
+    
+    - name: Build project
+      run: |
+        cd frontend
+        npm run build
+      env:
+        NEXT_PUBLIC_API_URL: https://cinescopeanalyzer-production.up.railway.app
+    
     - name: Deploy to Vercel
       uses: amondnet/vercel-action@v25
       with:
@@ -184,4 +205,6 @@ EOF
         vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
         vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
         working-directory: frontend
-        vercel-args: '--prod'
+        vercel-args: '--prod --yes'
+      env:
+        NEXT_PUBLIC_API_URL: https://cinescopeanalyzer-production.up.railway.app

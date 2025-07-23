@@ -51,6 +51,18 @@ jobs:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
       
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+      
+      - name: 📦 Install dependencies
+        run: |
+          cd frontend
+          npm ci
+      
       - name: ▲ Deploy to Vercel
         uses: amondnet/vercel-action@v25
         with:
@@ -59,6 +71,8 @@ jobs:
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
           working-directory: frontend
           vercel-args: '--prod'
+        env:
+          NEXT_PUBLIC_API_URL: https://cinescopeanalyzer-production.up.railway.app
       
       - name: 🎉 Deployment Success
         run: |
