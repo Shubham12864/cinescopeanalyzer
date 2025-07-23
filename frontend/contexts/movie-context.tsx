@@ -3,15 +3,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { movieApi } from '@/lib/api'
 import type { Movie, SearchFilters } from '@/types/movie'
+import type { ToastData } from '@/types/toast'
 import { useRecentlySearched } from '@/hooks/useRecentlySearched'
-
-interface ToastData {
-  id: string
-  type: 'success' | 'error' | 'info'
-  title: string
-  description?: string
-  duration?: number
-}
 
 interface MovieContextType {
   movies: Movie[]

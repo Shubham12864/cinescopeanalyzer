@@ -1,20 +1,9 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { CheckCircle, AlertCircle, X } from "lucide-react"
-
-interface ToastData {
-  id: string
-  type: 'success' | 'error' | 'info'
-  title: string
-  description?: string
-  duration?: number
-}
-
-interface ToastProps extends ToastData {
-  onClose: (id: string) => void
-}
+import type { ToastData, ToastProps, ToastContainerProps } from "@/types/toast"
 
 export function Toast({ id, type, title, description, duration = 4000, onClose }: ToastProps) {
   useEffect(() => {
@@ -65,7 +54,7 @@ export function Toast({ id, type, title, description, duration = 4000, onClose }
   )
 }
 
-export function ToastContainer({ toasts, onRemoveToast }: { toasts: ToastData[], onRemoveToast: (id: string) => void }) {
+export function ToastContainer({ toasts, onRemoveToast }: ToastContainerProps) {
   return (
     <div className="fixed top-4 right-4 z-50 space-y-2">
       <AnimatePresence>
