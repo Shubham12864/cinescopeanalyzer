@@ -8,6 +8,43 @@ import { MovieSuggestions } from "@/components/suggestions/movie-suggestions"
 import { PopularMoviesSection } from "@/components/sections/popular-movies-section"
 import { TopRatedMoviesSection } from "@/components/sections/top-rated-movies-section"
 import { RecentMoviesSection } from "@/components/sections/recent-movies-section"
+import { useMovieContext } from "@/contexts/movie-context"
+
+function SearchResultsOrHomeSections() {
+  const { searchQuery } = useMovieContext()
+  
+  if (searchQuery && searchQuery.trim()) {
+    // Show search results immediately after hero
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <MovieGrid />
+      </div>
+    )
+  }
+  
+  // Show normal home sections when not searching
+  return (
+    <div className="container mx-auto px-4 py-8 space-y-12">
+      {/* Movie Suggestions - Dynamic suggestions that change every minute */}
+      <MovieSuggestions />
+
+      {/* Popular Movies - Most popular movies */}
+      <PopularMoviesSection />
+
+      {/* Top Rated Movies - Highest rated movies */}
+      <TopRatedMoviesSection />
+
+      {/* Recent Movies - Latest movies */}
+      <RecentMoviesSection />
+      
+      {/* All Movies Grid - General movie browsing */}
+      <div className="mt-12">
+        <h2 className="text-2xl font-bold text-white mb-6">Browse All Movies</h2>
+        <MovieGrid />
+      </div>
+    </div>
+  )
+}
 
 export default function HomePage() {
   return (
@@ -24,26 +61,8 @@ export default function HomePage() {
           {/* Hero Section */}
           <Hero />
           
-          {/* Dynamic Movie Sections */}
-          <div className="container mx-auto px-4 py-8 space-y-12">
-            {/* Movie Suggestions - Dynamic suggestions that change every minute */}
-            <MovieSuggestions />
-
-            {/* Popular Movies - Most popular movies */}
-            <PopularMoviesSection />
-
-            {/* Top Rated Movies - Highest rated movies */}
-            <TopRatedMoviesSection />
-
-            {/* Recent Movies - Latest movies */}
-            <RecentMoviesSection />
-            
-            {/* All Movies Grid - General movie browsing */}
-            <div className="mt-12">
-              <h2 className="text-2xl font-bold text-white mb-6">Browse All Movies</h2>
-              <MovieGrid />
-            </div>
-          </div>
+          {/* Search Results or Dynamic Movie Sections */}
+          <SearchResultsOrHomeSections />
         </motion.div>
       </main>
     </div>
