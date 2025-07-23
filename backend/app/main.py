@@ -4,10 +4,12 @@ import os
 warnings.filterwarnings("ignore", category=DeprecationWarning, module="cryptography")
 os.environ["PYTHONWARNINGS"] = "ignore::DeprecationWarning"
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import uvicorn
 from dotenv import load_dotenv
+import logging
 
 # Import API routes
 from .api.routes.movies import router as movies_router
@@ -15,6 +17,17 @@ from .api.routes.images import router as images_router
 from .api.routes.analytics import router as analytics_router
 # Temporarily disabled to avoid pandas/numpy compatibility issues
 # from .api.routes.enhanced_analysis_routes import router as enhanced_analysis_router
+
+# Import error handling
+from .core.error_handler import (
+    global_exception_handler,
+    CineScopeException,
+    ValidationException,
+    NotFoundException,
+    ExternalAPIException,
+    ImageProcessingException,
+    SearchException
+)
 
 # Load environment variables
 load_dotenv()
@@ -54,6 +67,15 @@ async def options_handler(path: str):
     response.headers["Access-Control-Allow-Headers"] = "*"
     response.headers["Access-Control-Max-Age"] = "3600"
     return response
+
+# Add global exception handlers
+app.add_exception_handler(CineScopeException, global_exception_handler)
+app.add_exception_handler(ValidationException, global_exception_handler)
+app.add_exception_handler(NotFoundException, global_exception_handler)
+app.add_exception_handler(ExternalAPIException, global_exception_handler)
+app.add_exception_handler(ImageProcessingException, global_exception_handler)
+app.add_exception_handler(SearchException, global_exception_handler)
+app.add_exception_handler(Exception, global_exception_handler)
 
 # Include API routes
 app.include_router(movies_router)

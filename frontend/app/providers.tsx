@@ -10,7 +10,7 @@ import { ToastContainer } from "@/components/ui/toast"
 
 function ToastWrapper() {
   const { toasts, removeToast } = useMovieContext()
-  return <ToastContainer toasts={toasts} onRemoveToast={removeToast} />
+  return <ToastContainer toasts={toasts} onRemove={removeToast} />
 }
 
 export function Providers({ children }: { children: React.ReactNode }) {

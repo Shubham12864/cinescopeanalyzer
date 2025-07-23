@@ -4,13 +4,15 @@ import { motion } from "framer-motion"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { useRef, useState } from "react"
 import { MovieCard } from "./movie-card"
+import { MovieCardSkeleton } from "./movie-card-skeleton"
 
 interface MovieRowProps {
   title: string
   movies: any[]
+  isLoading?: boolean
 }
 
-export function MovieRow({ title, movies }: MovieRowProps) {
+export function MovieRow({ title, movies, isLoading = false }: MovieRowProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(true)
@@ -70,17 +72,26 @@ export function MovieRow({ title, movies }: MovieRowProps) {
           className="flex gap-4 overflow-x-auto scrollbar-hide px-4 lg:px-8 pb-4"
           style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
         >
-          {movies.map((movie, index) => (
-            <motion.div
-              key={movie.id}
-              initial={{ opacity: 0, x: 50 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.5, delay: index * 0.1 }}
-              className="flex-shrink-0 w-64"
-            >
-              <MovieCard movie={movie} />
-            </motion.div>
-          ))}
+          {isLoading ? (
+            // Show skeleton loading with staggered animations
+            Array.from({ length: 15 }).map((_, index) => (
+              <div key={`skeleton-${index}`} className="flex-shrink-0 w-64">
+                <MovieCardSkeleton delay={index * 30} />
+              </div>
+            ))
+          ) : (
+            movies.map((movie, index) => (
+              <motion.div
+                key={movie.id}
+                initial={{ opacity: 0, x: 50 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.5, delay: index * 0.1 }}
+                className="flex-shrink-0 w-64"
+              >
+                <MovieCard movie={movie} />
+              </motion.div>
+            ))
+          )}
         </div>
       </div>
     </div>

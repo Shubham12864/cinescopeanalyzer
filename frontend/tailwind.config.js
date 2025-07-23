@@ -74,7 +74,14 @@ module.exports = {
   		},
   		animation: {
   			float: 'float 6s ease-in-out infinite',
-  			glow: 'glow 2s ease-in-out infinite alternate'
+  			glow: 'glow 2s ease-in-out infinite alternate',
+  			shimmer: 'shimmer 2s infinite'
+  		},
+  		keyframes: {
+  			shimmer: {
+  				'0%': { transform: 'translateX(-100%)' },
+  				'100%': { transform: 'translateX(100%)' }
+  			}
   		},
   		backdropBlur: {
   			xs: '2px'
