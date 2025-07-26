@@ -335,7 +335,7 @@ export function MovieGrid() {
         <div className="text-center py-12">
           <p className="text-gray-400 text-lg">No movies found for "{searchQuery}"</p>
           <button 
-            onClick={() => setSearchQuery('')}
+            onClick={() => clearSearch()}
             className="mt-4 px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
           >
             Clear Search
