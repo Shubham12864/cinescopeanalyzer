@@ -212,6 +212,9 @@ export function MovieProvider({ children }: { children: React.ReactNode }) {
       const debouncedSearchFn = async (searchQuery: string, signal?: AbortSignal) => {
         console.log(`🔍 Debounced search executing for: "${searchQuery}"`)
         
+        // Create cache key from query and filters
+        const cacheKey = `search_${searchQuery}_${JSON.stringify(filters)}`
+        
         try {
           // Pass abort signal to API call if supported
           const result = await movieApi.searchMovies(searchQuery, filters)
