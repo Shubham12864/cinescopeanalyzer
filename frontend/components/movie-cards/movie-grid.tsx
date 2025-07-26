@@ -287,59 +287,60 @@ export function MovieGrid() {
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
       <div className="px-4 lg:px-8 mb-8">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-3xl font-bold font-poppins text-white mb-2">Search Results for "{searchQuery}"</h2>
-            <div className="text-gray-400">
-              {movies.length} result{movies.length !== 1 ? "s" : ""} found
+        {searchQuery && (
+          <div className="flex justify-between items-center mb-8 px-4 lg:px-8">
+            <div>
+              <h2 className="text-3xl font-bold font-poppins text-white mb-2">Search Results for "{searchQuery}"</h2>
+              <div className="text-gray-400">
+                {isLoading ? "Searching..." : `${movies.length} result${movies.length !== 1 ? "s" : ""} found`}
+              </div>
             </div>
+            <button
+              onClick={clearSearch}
+              className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition-colors"
+            >
+              ← Back to Home
+            </button>
           </div>
-          <button
-            onClick={clearSearch}
-            className="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition-colors"
-          >
-            ← Back to Home
-          </button>
-        </div>
-      </div>      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-8 px-6 lg:px-12 max-w-screen-2xl mx-auto">
-        {movies.map((movie, index) => (
-          <motion.div
-            key={movie.id}
-            initial={{ opacity: 0, y: 50 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: index * 0.05 }}
-            className="h-full"
-          >
-            <MovieCard movie={movie} />
-          </motion.div>
-        ))}
+        )}
       </div>
 
-      {movies.length === 0 && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-12 px-4">
-          <div className="bg-gray-900/80 backdrop-blur-sm rounded-2xl p-8 max-w-md mx-auto border border-gray-800">
-            <div className="text-6xl mb-4 opacity-50">🔍</div>
-            <h3 className="text-xl font-semibold text-white mb-3">No results found</h3>
-            <p className="text-gray-400 mb-4">
-              No movies found for "{searchQuery}". Try searching with different keywords or check the spelling.
-            </p>
-            {isDemoMode && (
-              <div className="bg-yellow-900/30 border border-yellow-600 rounded-lg p-3 mb-4">
-                <p className="text-yellow-300 text-sm">
-                  ⚠️ Demo Mode: Limited search functionality - try connecting to the backend for full results
-                </p>
-              </div>
-            )}
-            <div className="space-y-2">
-              <p className="text-gray-500 text-sm">Suggestions:</p>
-              <ul className="text-gray-400 text-sm space-y-1">
-                <li>• Try broader search terms</li>
-                <li>• Check for typos</li>
-                <li>• Search by actor, director, or genre</li>
-              </ul>
-            </div>
-          </div>
-        </motion.div>
+      {/* FIXED: Show actual movies when search results are available */}
+      {searchQuery && !isLoading && movies.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-8 px-6 lg:px-12 max-w-screen-2xl mx-auto">
+          {movies.map((movie, index) => (
+            <motion.div
+              key={movie.id || movie.imdbId}
+              initial={{ opacity: 0, y: 50 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: index * 0.1 }}
+            >
+              <MovieCard movie={movie} />
+            </motion.div>
+          ))}
+        </div>
+      )}
+
+      {/* Show loading skeletons only when actually loading */}
+      {searchQuery && isLoading && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-8 px-6 lg:px-12 max-w-screen-2xl mx-auto">
+          {Array.from({ length: 12 }).map((_, index) => (
+            <MovieCardSkeleton key={index} />
+          ))}
+        </div>
+      )}
+
+      {/* Show no results message instead of empty space */}
+      {searchQuery && !isLoading && movies.length === 0 && (
+        <div className="text-center py-12">
+          <p className="text-gray-400 text-lg">No movies found for "{searchQuery}"</p>
+          <button 
+            onClick={() => setSearchQuery('')}
+            className="mt-4 px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+          >
+            Clear Search
+          </button>
+        </div>
       )}
     </motion.div>
   )

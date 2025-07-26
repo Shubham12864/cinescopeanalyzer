@@ -18,26 +18,13 @@ export function MovieCard({ movie }: MovieCardProps) {
   const { setSelectedMovie, analyzeMovie, isBackendConnected } = useMovieContext()
   
   const getImageSrc = () => {
-    // Priority 1: Backend image proxy URL (this is what the dynamic API returns)
+    // Priority 1: Use poster if available (backend should already provide correct URLs)
     if (movie.poster && movie.poster !== "N/A") {
-      // If it's already a full backend proxy URL, use it
-      if (movie.poster.includes('/api/movies/image-proxy')) {
-        return movie.poster
-      }
-      // If it's a direct OMDB URL, create proxy URL
-      if (movie.poster.includes('m.media-amazon.com')) {
-        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-        return `${API_BASE_URL}/api/movies/image-proxy?url=${encodeURIComponent(movie.poster)}`
-      }
-      // For any other poster URL, use as is
       return movie.poster
     }
 
-    // Priority 2: OMDB poster (for mock data compatibility)
+    // Priority 2: OMDB poster (for backward compatibility)
     if (movie.omdbPoster && movie.omdbPoster !== "N/A") {
-      if (movie.omdbPoster.includes('m.media-amazon.com')) {
-        return `http://localhost:8000/api/movies/image-proxy?url=${encodeURIComponent(movie.omdbPoster)}`
-      }
       return movie.omdbPoster
     }
     
@@ -51,10 +38,21 @@ export function MovieCard({ movie }: MovieCardProps) {
       return movie.imdbPoster
     }
 
-    // No valid poster found - use fallback
+    // No valid poster found - let MovieImage component handle fallback
     return null
   }
   
+  // Add this function to properly handle image URLs
+  const getOptimizedImageUrl = (posterUrl: string | null | undefined): string => {
+    if (!posterUrl || posterUrl === 'N/A') {
+      return `https://via.placeholder.com/300x450/1a1a1a/ffffff?text=${encodeURIComponent(movie.title || 'Movie')}`
+    }
+    
+    // Use backend image proxy for all external images
+    const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+    return `${API_BASE_URL}/api/movies/image-proxy?url=${encodeURIComponent(posterUrl)}`
+  }
+
   // Memoize expensive calculations
   const processedPlot = React.useMemo(() => {
     const plot = movie.plot || '';
@@ -94,9 +92,11 @@ export function MovieCard({ movie }: MovieCardProps) {
     >
       <div className="relative aspect-[3/4] overflow-hidden">
         <MovieImage
-          src={imageSrc}
+          src={getOptimizedImageUrl(movie.poster)}
           alt={movie.title}
-          fill
+          width={300}
+          height={450}
+          priority={false}
           className="object-cover transition-transform duration-300 group-hover:scale-105"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200" />

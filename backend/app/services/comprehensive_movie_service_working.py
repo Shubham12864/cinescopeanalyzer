@@ -287,40 +287,41 @@ class ComprehensiveMovieService:
         }
     
     async def _get_fallback_movies(self, count: int, seen_titles: set) -> List[Movie]:
-        """Get fallback movies with high-quality data"""
-        fallback_data = [
-            {
-                'id': 'tt0111161', 'title': 'The Shawshank Redemption', 'year': 1994,
-                'poster': 'https://m.media-amazon.com/images/M/MV5BNDE3ODcxYzMtY2YzZC00NmNlLWJiNDMtZDViZWM2MzIxZDYwXkEyXkFqcGdeQXVyNjAwNDUxODI@._V1_SX300.jpg',
-                'rating': 9.3, 'genre': ['Drama'], 'plot': 'Two imprisoned men bond over years, finding solace and redemption.',
-                'director': 'Frank Darabont', 'cast': ['Tim Robbins', 'Morgan Freeman']
-            },
-            {
-                'id': 'tt0468569', 'title': 'The Dark Knight', 'year': 2008,
-                'poster': 'https://m.media-amazon.com/images/M/MV5BMTMxNTMwODM0NF5BMl5BanBnXkFtZTcwODAyMTk2Mw@@._V1_SX300.jpg',
-                'rating': 9.0, 'genre': ['Action', 'Crime'], 'plot': 'Batman faces the Joker in Gotham City.',
-                'director': 'Christopher Nolan', 'cast': ['Christian Bale', 'Heath Ledger']
-            },
-            {
-                'id': 'tt1375666', 'title': 'Inception', 'year': 2010,
-                'poster': 'https://m.media-amazon.com/images/M/MV5BMjAxMzY3NjcxNF5BMl5BanBnXkFtZTcwNTI5OTM0Mw@@._V1_SX300.jpg',
-                'rating': 8.8, 'genre': ['Sci-Fi', 'Thriller'], 'plot': 'A thief enters dreams to plant ideas.',
-                'director': 'Christopher Nolan', 'cast': ['Leonardo DiCaprio', 'Marion Cotillard']
-            }
-        ]        
-        movies = []
-        for data in fallback_data:
-            if len(movies) >= count:
-                break
+        """Get fallback movies from real API calls - NO HARDCODED DATA"""
+        try:
+            self.logger.info(f"🔄 Getting {count} fallback movies from real APIs")
             
-            title_lower = data['title'].lower()
-            if title_lower not in seen_titles:
-                movie = await self._create_enhanced_movie(data, 'classic')
-                if movie:
-                    movies.append(movie)
-                    seen_titles.add(title_lower)
-        
-        return movies
+            # Use OMDB API for classic/popular movies
+            fallback_queries = ["classic movies", "award winner", "best director", "top rated"]
+            movies = []
+            
+            for query in fallback_queries:
+                if len(movies) >= count:
+                    break
+                    
+                try:
+                    if hasattr(self.api_manager, 'omdb_api'):
+                        results = await self.api_manager.omdb_api.search_movies(query, 3)
+                        for result in results:
+                            if len(movies) >= count:
+                                break
+                            
+                            title_lower = result.get('title', '').lower()
+                            if title_lower and title_lower not in seen_titles:
+                                movie = await self._create_enhanced_movie(result, 'fallback_real')
+                                if movie:
+                                    movies.append(movie)
+                                    seen_titles.add(title_lower)
+                except Exception as e:
+                    self.logger.warning(f"Fallback query '{query}' failed: {e}")
+                    continue
+            
+            self.logger.info(f"✅ Generated {len(movies)} real fallback movies")
+            return movies
+            
+        except Exception as e:
+            self.logger.error(f"❌ Fallback movies failed: {e}")
+            return []
     
     async def get_comprehensive_movie_data(self, movie_id: str, movie_title: str = None, year: int = None) -> Optional[Movie]:
         """Get comprehensive movie data (simplified version)"""
@@ -344,82 +345,35 @@ class ComprehensiveMovieService:
         self.logger.info(f"🔥 Getting trending movies using quick fallback (limit: {limit})")
         
         try:
-            # Use local enhanced suggestions first (fastest)
-            suggestions = await self.get_enhanced_suggestions(limit=limit)
-            if suggestions and len(suggestions) >= limit:
-                self.logger.info(f"✅ Using enhanced suggestions for trending: {len(suggestions)} movies")
-                return suggestions[:limit]
+            # Use OMDB API for trending searches
+            trending_searches = ["2024 movies", "new releases", "trending", "latest movies"]
+            all_movies = []
             
-            # Quick fallback with predefined trending data
-            trending_data = [
-                {
-                    'title': 'Spider-Man: No Way Home',
-                    'year': 2021,
-                    'plot': 'Spider-Man seeks Doctor Strange\'s help to forget his exposed identity, but a spell gone wrong brings villains from other dimensions.',
-                    'rating': 8.4,
-                    'genre': ['Action', 'Adventure', 'Fantasy'],
-                    'director': 'Jon Watts',
-                    'cast': ['Tom Holland', 'Zendaya', 'Benedict Cumberbatch'],
-                    'poster': 'https://m.media-amazon.com/images/M/MV5BZWMyYzFjYTYtNTRjYi00OGExLWE2YzgtOGRmYjAxZTU3NzBiXkEyXkFqcGdeQXVyMzQ0MzA0NTM@._V1_SX300.jpg',
-                    'runtime': 148,
-                    'imdbId': 'tt10872600',
-                    'source': 'trending_local'
-                },
-                {
-                    'title': 'Avengers: Endgame',
-                    'year': 2019,
-                    'plot': 'After the devastating events of Infinity War, the Avengers assemble once more to reverse Thanos\' actions.',
-                    'rating': 8.4,
-                    'genre': ['Action', 'Adventure', 'Drama'],
-                    'director': 'Anthony Russo',
-                    'cast': ['Robert Downey Jr.', 'Chris Evans', 'Mark Ruffalo'],
-                    'poster': 'https://m.media-amazon.com/images/M/MV5BMTc5MDE2ODcwNV5BMl5BanBnXkFtZTgwMzI2NzQ2NzM@._V1_SX300.jpg',
-                    'runtime': 181,
-                    'imdbId': 'tt4154796',
-                    'source': 'trending_local'
-                },
-                {
-                    'title': 'The Batman',
-                    'year': 2022,
-                    'plot': 'Batman ventures into Gotham City\'s underworld when a sadistic killer leaves behind a trail of cryptic clues.',
-                    'rating': 7.8,
-                    'genre': ['Action', 'Crime', 'Drama'],
-                    'director': 'Matt Reeves',
-                    'cast': ['Robert Pattinson', 'Zoë Kravitz', 'Jeffrey Wright'],
-                    'poster': 'https://m.media-amazon.com/images/M/MV5BMDdmMTBiNTYtMDIzNi00NGVlLWIzMDYtZTk3MTQ3NGQxZGEwXkEyXkFqcGdeQXVyMzMwOTU5MDk@._V1_SX300.jpg',
-                    'runtime': 176,
-                    'imdbId': 'tt1877830',
-                    'source': 'trending_local'
-                },
-                {
-                    'title': 'Top Gun: Maverick',
-                    'year': 2022,
-                    'plot': 'After thirty years, Maverick is still pushing the envelope as a top naval aviator.',
-                    'rating': 8.3,
-                    'genre': ['Action', 'Drama'],
-                    'director': 'Joseph Kosinski',
-                    'cast': ['Tom Cruise', 'Jennifer Connelly', 'Miles Teller'],
-                    'poster': 'https://m.media-amazon.com/images/M/MV5BZWYzOGEwNTgtNWU3NS00ZTQ0LWJkODUtMmVhMjIwMjA1ZmQwXkEyXkFqcGdeQXVyMjkwOTAyMDU@._V1_SX300.jpg',
-                    'runtime': 130,
-                    'imdbId': 'tt1745960',
-                    'source': 'trending_local'
-                }
-            ]
+            for search_term in trending_searches:
+                try:
+                    if hasattr(self.api_manager, 'omdb_api'):
+                        results = await self.api_manager.omdb_api.search_movies(search_term, 5)
+                        if results:
+                            all_movies.extend(results)
+                            if len(all_movies) >= limit:
+                                break
+                except Exception as e:
+                    self.logger.warning(f"Trending search failed for '{search_term}': {e}")
+                    continue
             
-            # Convert to Movie objects
-            trending_movies = []
-            for data in trending_data:
-                movie = await self._create_enhanced_movie(data, "trending")
+            # Process with proper image handling
+            processed_movies = []
+            for movie_data in all_movies[:limit]:
+                movie = await self._create_enhanced_movie(movie_data, "trending_live")
                 if movie:
-                    trending_movies.append(movie)
+                    processed_movies.append(movie)
             
-            # Fill remaining slots with suggestions
-            if len(trending_movies) < limit and suggestions:
-                remaining = limit - len(trending_movies)
-                trending_movies.extend(suggestions[:remaining])
+            if processed_movies:
+                self.logger.info(f"✅ Returning {len(processed_movies)} REAL trending movies")
+                return processed_movies
             
-            self.logger.info(f"✅ Returning {len(trending_movies)} trending movies")
-            return trending_movies[:limit]
+            # Only use enhanced suggestions if OMDB completely fails
+            return await self.get_enhanced_suggestions(limit=limit)
                 
         except Exception as e:
             self.logger.error(f"❌ Error getting trending movies: {e}")
@@ -427,88 +381,40 @@ class ComprehensiveMovieService:
             return await self.get_enhanced_suggestions(limit=limit)
 
     async def get_popular_movies(self, limit: int = 20) -> List[Movie]:
-        """Get popular movies using local data and quick fallback"""
-        self.logger.info(f"⭐ Getting popular movies using quick fallback (limit: {limit})")
+        """Get popular movies from REAL APIs - NO HARDCODED DATA"""
+        self.logger.info(f"🎬 Getting {limit} REAL popular movies from APIs")
         
         try:
-            # Use local enhanced suggestions first (fastest)
-            suggestions = await self.get_enhanced_suggestions(limit=limit)
-            if suggestions and len(suggestions) >= limit:
-                self.logger.info(f"✅ Using enhanced suggestions for popular: {len(suggestions)} movies")
-                return suggestions[:limit]
+            # 1. Try OMDB API for popular searches
+            popular_searches = ["top rated", "best movies", "oscar winner", "blockbuster"]
+            all_movies = []
             
-            # Quick fallback with predefined popular data
-            popular_data = [
-                {
-                    'title': 'The Shawshank Redemption',
-                    'year': 1994,
-                    'plot': 'Two imprisoned men bond over a number of years, finding solace and eventual redemption through acts of common decency.',
-                    'rating': 9.3,
-                    'genre': ['Drama'],
-                    'director': 'Frank Darabont',
-                    'cast': ['Tim Robbins', 'Morgan Freeman'],
-                    'poster': 'https://m.media-amazon.com/images/M/MV5BMDFkYTc0MGEtZmNhMC00ZDIzLWFmNTEtODM1ZmRlYWMwMWFmXkEyXkFqcGdeQXVyMTMxODk2OTU@._V1_SX300.jpg',
-                    'runtime': 142,
-                    'imdbId': 'tt0111161',
-                    'source': 'popular_local'
-                },
-                {
-                    'title': 'The Godfather',
-                    'year': 1972,
-                    'plot': 'The aging patriarch of an organized crime dynasty transfers control of his clandestine empire to his reluctant son.',
-                    'rating': 9.2,
-                    'genre': ['Crime', 'Drama'],
-                    'director': 'Francis Ford Coppola',
-                    'cast': ['Marlon Brando', 'Al Pacino', 'James Caan'],
-                    'poster': 'https://m.media-amazon.com/images/M/MV5BM2MyNjYxNmUtYTAwNi00MTYxLWJmNWYtYzZlODY3ZTk3OTFlXkEyXkFqcGdeQXVyNzkwMjQ5NzM@._V1_SX300.jpg',
-                    'runtime': 175,
-                    'imdbId': 'tt0068646',
-                    'source': 'popular_local'
-                },
-                {
-                    'title': 'The Dark Knight',
-                    'year': 2008,
-                    'plot': 'Batman raises the stakes in his war on crime with the help of Lieutenant Jim Gordon and District Attorney Harvey Dent.',
-                    'rating': 9.0,
-                    'genre': ['Action', 'Crime', 'Drama'],
-                    'director': 'Christopher Nolan',
-                    'cast': ['Christian Bale', 'Heath Ledger', 'Aaron Eckhart'],
-                    'poster': 'https://m.media-amazon.com/images/M/MV5BMTMxNTMwODM0NF5BMl5BanBnXkFtZTcwODAyMTk2Mw@@._V1_SX300.jpg',
-                    'runtime': 152,
-                    'imdbId': 'tt0468569',
-                    'source': 'popular_local'
-                },
-                {
-                    'title': 'Pulp Fiction',
-                    'year': 1994,
-                    'plot': 'The lives of two mob hitmen, a boxer, a gangster and his wife intertwine in four tales of violence and redemption.',
-                    'rating': 8.9,
-                    'genre': ['Crime', 'Drama'],
-                    'director': 'Quentin Tarantino',
-                    'cast': ['John Travolta', 'Uma Thurman', 'Samuel L. Jackson'],
-                    'poster': 'https://m.media-amazon.com/images/M/MV5BNGNhMDIzZTUtNTBlZi00MTRlLWFjM2ItYzViMjE3YzI5MjljXkEyXkFqcGdeQXVyNzkwMjQ5NzM@._V1_SX300.jpg',
-                    'runtime': 154,
-                    'imdbId': 'tt0110912',
-                    'source': 'popular_local'
-                }
-            ]
+            for search_term in popular_searches:
+                try:
+                    if hasattr(self.api_manager, 'omdb_api'):
+                        results = await self.api_manager.omdb_api.search_movies(search_term, 5)
+                        if results:
+                            all_movies.extend(results)
+                            if len(all_movies) >= limit:
+                                break
+                except Exception as e:
+                    self.logger.warning(f"OMDB search failed for '{search_term}': {e}")
+                    continue
             
-            # Convert to Movie objects
-            popular_movies = []
-            for data in popular_data:
-                movie = await self._create_enhanced_movie(data, "popular")
+            # 2. Process with proper image handling
+            processed_movies = []
+            for movie_data in all_movies[:limit]:
+                movie = await self._create_enhanced_movie(movie_data, "popular_live")
                 if movie:
-                    popular_movies.append(movie)
+                    processed_movies.append(movie)
             
-            # Fill remaining slots with suggestions
-            if len(popular_movies) < limit and suggestions:
-                remaining = limit - len(popular_movies)
-                popular_movies.extend(suggestions[:remaining])
-            
-            self.logger.info(f"✅ Returning {len(popular_movies)} popular movies")
-            return popular_movies[:limit]
+            if processed_movies:
+                self.logger.info(f"✅ Returning {len(processed_movies)} REAL popular movies")
+                return processed_movies
                 
+            # 3. Only use enhanced suggestions if OMDB completely fails
+            return await self.get_enhanced_suggestions(limit=limit)
+            
         except Exception as e:
-            self.logger.error(f"❌ Error getting popular movies: {e}")
-            # Final fallback to suggestions  
+            self.logger.error(f"❌ Popular movies failed: {e}")
             return await self.get_enhanced_suggestions(limit=limit)

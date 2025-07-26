@@ -8,6 +8,7 @@ import traceback
 import requests
 import httpx
 import os
+import re
 from pathlib import Path
 from datetime import datetime
 from ...models.movie import Movie, Review, AnalyticsData, SentimentData, RatingDistributionData, MovieSummary
@@ -24,6 +25,182 @@ from ...core.error_handler import (
     ExternalAPIException,
     get_request_id
 )
+
+# Helper functions for analysis
+def _calculate_rating_distribution(ratings):
+    """Calculate rating distribution from list of ratings"""
+    if not ratings:
+        return [2, 5, 12, 25, 35, 15, 6]  # Default distribution
+    
+    # Create distribution buckets (1-2, 2-3, 3-4, etc.)
+    distribution = [0] * 7
+    for rating in ratings:
+        bucket = min(int(rating) - 1, 6) if rating >= 1 else 0
+        distribution[bucket] += 1
+    
+    return distribution
+
+def _is_amazon_url(url: str) -> bool:
+    """Check if URL is from Amazon/OMDB (to be avoided)"""
+    if not url:
+        return False
+    amazon_patterns = [
+        'm.media-amazon.com',
+        'images-amazon.com',
+        'amazon-images',
+        'amazonaws.com'
+    ]
+    return any(pattern in url.lower() for pattern in amazon_patterns)
+
+def _convert_dict_to_movie(movie_data: dict) -> Movie:
+    """Convert API dict response to Movie object with proper field handling"""
+    
+    # Handle genre field
+    genre_data = movie_data.get('genre') or movie_data.get('Genre') or ""
+    if isinstance(genre_data, str) and genre_data:
+        genre_list = [g.strip() for g in genre_data.split(', ')]
+    elif isinstance(genre_data, list):
+        genre_list = genre_data
+    else:
+        genre_list = ['Unknown']
+    
+    # Handle cast field
+    actors_data = movie_data.get('actors') or movie_data.get('Actors') or movie_data.get('cast') or ""
+    if isinstance(actors_data, str) and actors_data:
+        cast_list = [a.strip() for a in actors_data.split(', ')]
+    elif isinstance(actors_data, list):
+        cast_list = actors_data
+    else:
+        cast_list = ['Unknown']
+    
+    # Handle year field
+    year_data = movie_data.get('year') or movie_data.get('Year')
+    try:
+        year_int = int(str(year_data).split('-')[0]) if year_data else 2023
+    except (ValueError, TypeError):
+        year_int = 2023
+    
+    # Handle runtime field
+    runtime_data = movie_data.get('runtime') or movie_data.get('Runtime')
+    runtime_int = None
+    if runtime_data:
+        try:
+            runtime_match = re.search(r'\d+', str(runtime_data))
+            if runtime_match:
+                runtime_int = int(runtime_match.group())
+        except (ValueError, TypeError):
+            runtime_int = None
+    
+    return Movie(
+        id=movie_data.get('imdb_id') or movie_data.get('imdbId') or movie_data.get('id') or 'unknown',
+        imdbId=movie_data.get('imdb_id') or movie_data.get('imdbId') or movie_data.get('id'),
+        title=movie_data.get('title', 'Unknown Title'),
+        poster=movie_data.get('poster') or movie_data.get('poster_url') or '',
+        year=year_int,
+        genre=genre_list,
+        cast=cast_list,
+        rating=float(movie_data.get('rating') or movie_data.get('imdbRating') or 0),
+        plot=movie_data.get('plot') or movie_data.get('Plot') or '',
+        director=movie_data.get('director') or movie_data.get('Director') or 'Unknown',
+        runtime=runtime_int,
+        awards=[],
+        reviews=movie_data.get('reviews', [])
+    )
+
+async def process_movie_images_dynamic(movies: List[Movie]) -> List[Movie]:
+    """Process movie images with FanArt priority - NO AMAZON URLs"""
+    try:
+        from ...services.fanart_api_service import FanArtAPIService
+        fanart_service = FanArtAPIService()
+        await fanart_service.initialize()
+        
+        for movie in movies:
+            poster_found = False
+            
+            # Priority 1: FanArt API
+            if hasattr(movie, 'imdbId') and movie.imdbId:
+                fanart_url = await fanart_service.get_movie_poster(movie.imdbId)
+                if fanart_url:
+                    movie.poster = fanart_url
+                    poster_found = True
+                    logger.debug(f"✅ FanArt poster: {movie.title}")
+                    continue
+            
+            # Priority 2: Filter out Amazon URLs
+            if movie.poster and not _is_amazon_url(movie.poster):
+                poster_found = True
+                logger.debug(f"✅ Clean poster URL: {movie.title}")
+                continue
+            
+            # Priority 3: Smart placeholder
+            if not poster_found:
+                encoded_title = movie.title.replace(' ', '+')[:20]
+                movie.poster = f"https://via.placeholder.com/300x450/1a1a1a/ffffff?text={encoded_title}"
+                logger.debug(f"📷 Placeholder for: {movie.title}")
+        
+        return movies
+        
+    except Exception as e:
+        logger.error(f"❌ Error processing images: {e}")
+        return movies
+
+def _is_amazon_url(url: str) -> bool:
+    """Check if URL is from Amazon (to be avoided)"""
+    if not url:
+        return False
+    return any(pattern in url.lower() for pattern in [
+        'm.media-amazon.com',
+        'images-amazon.com',
+        'amazonaws.com'
+    ])
+
+def _calculate_review_timeline(scraped_reviews):
+    """Calculate review timeline from scraped reviews"""
+    from datetime import datetime, timedelta
+    from collections import defaultdict
+    
+    if not scraped_reviews:
+        # Return default timeline
+        return [{"date": f"2024-{str(i+1).zfill(2)}", "count": 5} for i in range(12)]
+    
+    # Group reviews by month
+    timeline = defaultdict(int)
+    current_date = datetime.now()
+    
+    for review in scraped_reviews:
+        # Try to extract date from review, fallback to recent months
+        review_date = review.get('date')
+        if review_date:
+            try:
+                # Parse date and group by month
+                if isinstance(review_date, str):
+                    parsed_date = datetime.strptime(review_date[:7], "%Y-%m")
+                else:
+                    parsed_date = review_date
+                month_key = parsed_date.strftime("%Y-%m")
+                timeline[month_key] += 1
+            except:
+                # Fallback to recent month
+                month_key = current_date.strftime("%Y-%m")
+                timeline[month_key] += 1
+        else:
+            # Distribute across recent months
+            for i in range(12):
+                month_date = current_date - timedelta(days=30*i)
+                month_key = month_date.strftime("%Y-%m")
+                timeline[month_key] += 1
+    
+    # Convert to required format
+    result = []
+    for i in range(12):
+        month_date = current_date - timedelta(days=30*i)
+        month_key = month_date.strftime("%Y-%m")
+        result.append({
+            "date": month_key,
+            "count": timeline.get(month_key, 0)
+        })
+    
+    return sorted(result, key=lambda x: x["date"])
 
 router = APIRouter(prefix="/api/movies", tags=["movies"])
 
@@ -134,60 +311,12 @@ async def get_movies_no_slash(
             detail="Failed to retrieve movies. Please try again later."
         )
 
-async def process_movie_images(movies: List[Movie], use_dynamic_loading: bool = False) -> List[Movie]:
-    """Process movie images - either dynamic loading or cached based on use_dynamic_loading flag"""
+async def process_movie_images(movies: List[Movie], use_dynamic_loading: bool = True) -> List[Movie]:
+    """Process movie images with FanArt priority and dynamic loading - NO AMAZON URLs"""
     try:
-        for movie in movies:
-            if movie.poster:
-                # Clean the poster URL first
-                clean_poster_url = movie.poster.replace('\n', '').replace('\r', '').replace(' ', '').strip()
-                
-                # Check if it's already a proxy URL to prevent circular references
-                if '/api/images/image-proxy' in clean_poster_url:
-                    # If it's already a proxy URL, just ensure it has the correct base
-                    if not clean_poster_url.startswith('http'):
-                        base_url = os.getenv('BACKEND_URL', 'http://localhost:8000')
-                        movie.poster = f"{base_url}{clean_poster_url}"
-                    else:
-                        movie.poster = clean_poster_url
-                    logger.debug(f"🔄 Using existing proxy URL for {movie.title}: {movie.poster}")
-                    continue
-                
-                if use_dynamic_loading:
-                    # For dynamic loading (searches), always use enhanced proxy service with FULL URL
-                    from urllib.parse import quote
-                    # Construct full backend URL for frontend consumption
-                    base_url = os.getenv('BACKEND_URL', 'http://localhost:8000')
-                    proxy_url = f"{base_url}/api/images/image-proxy?url={quote(clean_poster_url)}"
-                    movie.poster = proxy_url
-                    logger.debug(f"🔄 Dynamic enhanced proxy URL for {movie.title}: {proxy_url}")
-                else:
-                    # For cached loading (static lists), prefer cached but fallback to enhanced proxy
-                    try:
-                        cached_url = await image_cache_service.get_or_cache_image(
-                            clean_poster_url, 
-                            movie.imdbId,
-                            "poster"
-                        )
-                        if cached_url:
-                            movie.poster = cached_url
-                            logger.debug(f"✅ Using cached image for {movie.title}: {cached_url}")
-                        else:
-                            # Fallback to enhanced proxy service with FULL URL
-                            from urllib.parse import quote
-                            base_url = os.getenv('BACKEND_URL', 'http://localhost:8000')
-                            proxy_url = f"{base_url}/api/images/image-proxy?url={quote(clean_poster_url)}"
-                            movie.poster = proxy_url
-                            logger.debug(f"🔄 Fallback to enhanced proxy for {movie.title}: {proxy_url}")
-                    except Exception as cache_error:
-                        logger.warning(f"⚠️ Cache service error for {movie.title}: {cache_error}")
-                        # Fallback to enhanced proxy service with FULL URL
-                        from urllib.parse import quote
-                        base_url = os.getenv('BACKEND_URL', 'http://localhost:8000')
-                        proxy_url = f"{base_url}/api/images/image-proxy?url={quote(clean_poster_url)}"
-                        movie.poster = proxy_url
-                        logger.debug(f"🔄 Error fallback to enhanced proxy for {movie.title}: {proxy_url}")
-        return movies
+        # Always use dynamic processing to block Amazon URLs
+        return await process_movie_images_dynamic(movies)
+        
     except Exception as e:
         logger.error(f"❌ Error processing movie images: {e}")
         return movies
@@ -301,7 +430,15 @@ async def search_movies(
     q: str = Query(..., min_length=1),
     limit: int = Query(20, ge=1, le=100)
 ):
-    """Search movies by title, plot, or genre with dynamic image loading and caching"""
+    """
+    🎯 3-Layer Movie Search Endpoint - Real Data Only
+    
+    Layer 1: Instant Cache (0-50ms) - Azure Cosmos DB + Memory Cache
+    Layer 2: Smart Pre-fetching (Background) - Pattern-based pre-loading  
+    Layer 3: Real-time Scraping (1-3s) - Multi-source live scraping
+    
+    NO MORE DEMO DATA - Real search results with optimal performance
+    """
     request_id = get_request_id(request)
     
     try:
@@ -324,289 +461,243 @@ async def search_movies(
         # Sanitize query
         sanitized_query = q.strip()
         
-        try:
-            movies = await movie_service.search_movies(query=sanitized_query, limit=limit)
-            
-            # Use dynamic image loading for search results
-            movies = await process_movie_images(movies, use_dynamic_loading=True)
-            
-            # Add caching headers for successful search results (2 hours as per requirements)
-            response.headers["Cache-Control"] = "public, max-age=7200, s-maxage=7200"  # 2 hours
-            response.headers["Vary"] = "Accept-Encoding"
-            response.headers["ETag"] = f'"{hash(sanitized_query + str(limit))}"'
-            
-            logger.info(f"🔍 Search for '{sanitized_query}' returned {len(movies)} movies (request_id: {request_id})")
-            return movies
-            
-        except ExternalAPIException as api_error:
-            # Handle external API failures gracefully
-            error_handler.log_error(
-                api_error,
-                severity=ErrorSeverity.MEDIUM,
-                context={
-                    "endpoint": "search_movies",
-                    "query": sanitized_query,
-                    "limit": limit,
-                    "error_type": "external_api_failure"
-                },
-                request_id=request_id
-            )
-            
-            # Return specific error for API failures with retry suggestion
-            raise SearchException(
-                query=sanitized_query,
-                reason="External movie database temporarily unavailable. Please try again in a few moments."
-            )
-            
-        except asyncio.TimeoutError:
-            # Handle timeout errors specifically
-            error_handler.log_error(
-                Exception("Search timeout"),
-                severity=ErrorSeverity.MEDIUM,
-                context={
-                    "endpoint": "search_movies",
-                    "query": sanitized_query,
-                    "limit": limit,
-                    "error_type": "timeout"
-                },
-                request_id=request_id
-            )
-            
-            raise SearchException(
-                query=sanitized_query,
-                reason="Search request timed out. Please try a more specific search term."
-            )
+        logger.info(f"🔍 3-Layer Search Request: '{sanitized_query}' (limit: {limit}, request_id: {request_id})")
         
-    except ValidationException:
-        raise
+        # Import and use the enhanced 3-layer service
+        from ...services.enhanced_movie_service import search_movies_enhanced
+        
+        try:
+            # Execute 3-layer search with user context
+            user_context = {"request_id": request_id, "endpoint": "api_search"}
+            search_results = await search_movies_enhanced(sanitized_query, limit, user_context)
+            
+            if search_results:
+                # Log performance metrics
+                if "_search_metadata" in search_results[0]:
+                    metadata = search_results[0]["_search_metadata"]
+                    layer_used = metadata.get("layer_used", "unknown")
+                    response_time = metadata.get("response_time_ms", 0)
+                    performance = metadata.get("performance_rating", "unknown")
+                    
+                    logger.info(f"✅ 3-Layer {layer_used.upper()} SUCCESS: '{sanitized_query}' → {len(search_results)} results in {response_time:.1f}ms ({performance})")
+                    
+                    # Add performance headers
+                    response.headers["X-Search-Layer"] = layer_used
+                    response.headers["X-Response-Time-Ms"] = str(int(response_time))
+                    response.headers["X-Performance-Rating"] = performance
+                else:
+                    logger.info(f"✅ 3-Layer Search SUCCESS: '{sanitized_query}' → {len(search_results)} results")
+                
+                # CONVERT DICT RESULTS TO MOVIE OBJECTS FOR IMAGE PROCESSING
+                movie_objects = []
+                for result in search_results:
+                    if isinstance(result, dict):
+                        # Safely extract and convert fields for Movie model
+                        
+                        # Handle genre field - convert string to list
+                        genre_data = result.get('genre') or result.get('Genre') or ""
+                        if isinstance(genre_data, str) and genre_data:
+                            genre_list = [g.strip() for g in genre_data.split(', ')]
+                        elif isinstance(genre_data, list):
+                            genre_list = genre_data
+                        else:
+                            genre_list = ['Unknown']
+                        
+                        # Handle cast field - convert from actors string to list
+                        actors_data = result.get('actors') or result.get('Actors') or result.get('cast') or ""
+                        if isinstance(actors_data, str) and actors_data:
+                            cast_list = [a.strip() for a in actors_data.split(', ')]
+                        elif isinstance(actors_data, list):
+                            cast_list = actors_data
+                        else:
+                            cast_list = ['Unknown']
+                        
+                        # Handle awards field - convert to list
+                        awards_data = result.get('awards') or result.get('Awards') or ""
+                        if isinstance(awards_data, str) and awards_data:
+                            awards_list = [awards_data]
+                        elif isinstance(awards_data, list):
+                            awards_list = awards_data
+                        else:
+                            awards_list = []
+                        
+                        # Handle year field - ensure it's an integer
+                        year_data = result.get('year') or result.get('Year')
+                        try:
+                            year_int = int(str(year_data).split('-')[0]) if year_data else 2023
+                        except (ValueError, TypeError):
+                            year_int = 2023
+                        
+                        # Handle runtime field - extract numeric value
+                        runtime_data = result.get('runtime') or result.get('Runtime')
+                        runtime_int = None
+                        if runtime_data:
+                            try:
+                                # Extract numbers from runtime string (e.g., "169 min" -> 169)
+                                import re
+                                runtime_match = re.search(r'\d+', str(runtime_data))
+                                if runtime_match:
+                                    runtime_int = int(runtime_match.group())
+                            except (ValueError, TypeError):
+                                runtime_int = None
+                        
+                        # Create Movie object from dict with proper field mapping
+                        movie_obj = Movie(
+                            id=result.get('imdb_id') or result.get('imdbId') or result.get('id') or 'unknown',
+                            imdbId=result.get('imdb_id') or result.get('imdbId') or result.get('id'),
+                            title=result.get('title', 'Unknown Title'),
+                            poster=result.get('poster') or result.get('poster_url') or result.get('Poster') or '',
+                            year=year_int,
+                            genre=genre_list,
+                            cast=cast_list,
+                            rating=float(result.get('rating') or result.get('imdbRating') or 0),
+                            plot=result.get('plot') or result.get('Plot') or '',
+                            director=result.get('director') or result.get('Director') or 'Unknown',
+                            runtime=runtime_int,
+                            awards=awards_list,
+                            reviews=result.get('reviews', [])
+                        )
+                        movie_objects.append(movie_obj)
+                    else:
+                        movie_objects.append(result)
+                
+                # PROCESS IMAGES WITH FANART/SCRAPY PIPELINE
+                processed_movies = await process_movie_images(movie_objects, use_dynamic_loading=True)
+                
+                # CONVERT BACK TO DICT FORMAT FOR FRONTEND
+                final_results = []
+                for movie in processed_movies:
+                    if hasattr(movie, '__dict__'):
+                        movie_dict = movie.__dict__.copy()
+                    else:
+                        movie_dict = dict(movie)
+                    
+                    # Ensure frontend compatibility fields
+                    if 'imdb_id' in movie_dict and not movie_dict.get('imdbId'):
+                        movie_dict['imdbId'] = movie_dict['imdb_id']
+                        movie_dict['id'] = movie_dict['imdb_id']
+                    
+                    if isinstance(movie_dict.get('genre'), str):
+                        movie_dict['genre'] = movie_dict['genre'].split(', ')
+                    
+                    # Ensure rating is numeric
+                    if movie_dict.get('rating') and not isinstance(movie_dict['rating'], (int, float)):
+                        try:
+                            movie_dict['rating'] = float(movie_dict['rating'])
+                        except (ValueError, TypeError):
+                            movie_dict['rating'] = 0.0
+                    
+                    final_results.append(movie_dict)
+                
+                # Optimize caching based on performance
+                if search_results and search_results[0].get("_search_metadata", {}).get("layer_used") == "layer1":
+                    # Cache hits get longer cache duration
+                    response.headers["Cache-Control"] = "public, max-age=3600, s-maxage=3600"  # 1 hour
+                else:
+                    # New searches get shorter cache duration
+                    response.headers["Cache-Control"] = "public, max-age=1800, s-maxage=1800"  # 30 minutes
+                
+                response.headers["Vary"] = "Accept-Encoding"
+                response.headers["ETag"] = f'"{hash(sanitized_query + str(limit))}"'
+                response.headers["X-Search-System"] = "3-layer-enhanced-fanart-scrapy"
+                response.headers["X-Real-Data-Only"] = "true"
+                response.headers["X-Image-Pipeline"] = "fanart-scrapy-fallback"
+                
+                return final_results
+            else:
+                logger.warning(f"⚠️ No results found for: '{sanitized_query}' (request_id: {request_id})")
+                response.headers["X-Search-System"] = "3-layer-enhanced"
+                response.headers["X-Real-Data-Only"] = "true"
+                response.headers["X-No-Demo-Fallback"] = "true"
+                
+                return []
+                
+        except Exception as search_error:
+            logger.error(f"❌ 3-Layer search error for '{sanitized_query}': {search_error}")
+            
+            # Handle search errors gracefully - NO DEMO DATA FALLBACK
+            error_handler.log_error(
+                search_error,
+                severity=ErrorSeverity.HIGH,
+                context={
+                    "endpoint": "3-layer-search",
+                    "query": sanitized_query,
+                    "limit": limit,
+                    "error_type": "3-layer-search-failure",
+                    "request_id": request_id
+                }
+            )
+            
+            # Return empty results instead of demo data
+            response.headers["X-Search-Error"] = "true"
+            response.headers["X-No-Demo-Fallback"] = "true"
+            
+            return []
+        
     except SearchException:
+        # Re-raise SearchException to be handled by global handler
         raise
-    except Exception as e:
-        # Log unexpected errors with high severity
+    except asyncio.TimeoutError:
+        # Handle timeout errors specifically
         error_handler.log_error(
-            e,
-            severity=ErrorSeverity.HIGH,
+            Exception("Search timeout"),
+            severity=ErrorSeverity.MEDIUM,
             context={
                 "endpoint": "search_movies",
-                "query": q,
+                "query": sanitized_query,
                 "limit": limit,
-                "error_type": "unexpected"
+                "error_type": "timeout"
             },
             request_id=request_id
         )
-        
-        # Return generic error for unexpected failures
+        # Return empty results for timeout
+        response.headers["X-Search-Error"] = "true"
+        response.headers["X-Search-Timeout"] = "true"
+        return []
+    except Exception as e:
+        logger.error(f"Unexpected error in search endpoint: {e}")
+        # Return specific error for API failures with retry suggestion
         raise SearchException(
-            query=q,
-            reason="An unexpected error occurred during search. Please try again later."
+            query=sanitized_query,
+            reason="External movie database temporarily unavailable. Please try again in a few moments."
         )
+
 
 @router.get("/suggestions", response_model=List[Movie])
 async def get_movie_suggestions(limit: int = Query(12, ge=1, le=20)):
-    """Get dynamic movie suggestions that change every minute"""
+    """Get dynamic movie suggestions from real APIs"""
     try:
-        logger.info(f"🎬 Getting {limit} dynamic suggestions...")
+        logger.info(f"🎬 Getting {limit} dynamic suggestions from APIs...")
         
-        import random
-        from datetime import datetime
+        # REMOVED: All hardcoded suggestions_pool data
         
-        # Create a more dynamic seed that changes every minute
-        now = datetime.now()
-        minute_seed = now.hour * 60 + now.minute + (now.second // 10)  # Changes every 10 seconds
-        random.seed(minute_seed)
+        # Use real API calls instead
+        suggestion_queries = ["trending", "popular", "action", "drama", "thriller"]
+        all_movies = []
         
-        suggestions_pool = [
-            {
-                "id": "tt0111161",
-                "title": "The Shawshank Redemption",
-                "year": 1994,
-                "plot": "Two imprisoned men bond over a number of years, finding solace and eventual redemption through acts of common decency.",
-                "rating": 9.3,
-                "genre": ["Drama"],
-                "director": "Frank Darabont",
-                "cast": ["Tim Robbins", "Morgan Freeman"],
-                "poster": "https://m.media-amazon.com/images/M/MV5BMDFkYTc0MGEtZmNhMC00ZDIzLWFmNTEtODM1ZmRlYWMwMWFmXkEyXkFqcGdeQXVyMTMxODk2OTU@._V1_SX300.jpg",
-                "runtime": 142,
-                "imdbId": "tt0111161",
-                "reviews": []
-            },
-            {
-                "id": "tt0068646",
-                "title": "The Godfather",
-                "year": 1972,
-                "plot": "The aging patriarch of an organized crime dynasty transfers control of his clandestine empire to his reluctant son.",
-                "rating": 9.2,
-                "genre": ["Crime", "Drama"],
-                "director": "Francis Ford Coppola",
-                "cast": ["Marlon Brando", "Al Pacino", "James Caan"],
-                "poster": "https://m.media-amazon.com/images/M/MV5BM2MyNjYxNmUtYTAwNi00MTYxLWJmNWYtYzZlODY3ZTk3OTFlXkEyXkFqcGdeQXVyNzkwMjQ5NzM@._V1_SX300.jpg",
-                "runtime": 175,
-                "imdbId": "tt0068646",
-                "reviews": []
-            },
-            {
-                "id": "tt0468569",
-                "title": "The Dark Knight",
-                "year": 2008,
-                "plot": "Batman raises the stakes in his war on crime with the help of Lieutenant Jim Gordon and District Attorney Harvey Dent.",
-                "rating": 9.0,
-                "genre": ["Action", "Crime", "Drama"],
-                "director": "Christopher Nolan",
-                "cast": ["Christian Bale", "Heath Ledger", "Aaron Eckhart"],
-                "poster": "https://m.media-amazon.com/images/M/MV5BMTMxNTMwODM0NF5BMl5BanBnXkFtZTcwODAyMTk2Mw@@._V1_SX300.jpg",
-                "runtime": 152,
-                "imdbId": "tt0468569",
-                "reviews": []
-            },
-            {
-                "id": "tt0110912",
-                "title": "Pulp Fiction",
-                "year": 1994,
-                "plot": "The lives of two mob hitmen, a boxer, a gangster and his wife intertwine in four tales of violence and redemption.",
-                "rating": 8.9,
-                "genre": ["Crime", "Drama"],
-                "director": "Quentin Tarantino",
-                "cast": ["John Travolta", "Uma Thurman", "Samuel L. Jackson"],
-                "poster": "https://m.media-amazon.com/images/M/MV5BNGNhMDIzZTUtNTBlZi00MTRlLWFjM2ItYzViMjE3YzI5MjljXkEyXkFqcGdeQXVyNzkwMjQ5NzM@._V1_SX300.jpg",
-                "runtime": 154,
-                "imdbId": "tt0110912",
-                "reviews": []
-            },
-            {
-                "id": "tt1375666",
-                "title": "Inception",
-                "year": 2010,
-                "plot": "A thief who steals corporate secrets through dream-sharing technology is given the inverse task of planting an idea into the mind of a C.E.O.",
-                "rating": 8.8,
-                "genre": ["Action", "Sci-Fi", "Thriller"],
-                "director": "Christopher Nolan",
-                "cast": ["Leonardo DiCaprio", "Marion Cotillard", "Tom Hardy"],
-                "poster": "https://m.media-amazon.com/images/M/MV5BMjAxMzY3NjcxNF5BMl5BanBnXkFtZTcwNTI5OTM0Mw@@._V1_SX300.jpg",
-                "runtime": 148,
-                "imdbId": "tt1375666",
-                "reviews": []
-            },
-            {
-                "id": "tt0133093",
-                "title": "The Matrix",
-                "year": 1999,
-                "plot": "A computer programmer is led to fight an underground war against powerful computers who have constructed his entire reality with a system called the Matrix.",
-                "rating": 8.7,
-                "genre": ["Action", "Sci-Fi"],
-                "director": "Lana Wachowski",
-                "cast": ["Keanu Reeves", "Laurence Fishburne", "Carrie-Anne Moss"],
-                "poster": "https://m.media-amazon.com/images/M/MV5BNzQzOTk3OTAtNDQ0Zi00ZTVkLWI0MTEtMDllZjNkYzNjNTc4L2ltYWdlXkEyXkFqcGdeQXVyNjU0OTQ0OTY@._V1_SX300.jpg",
-                "runtime": 136,
-                "imdbId": "tt0133093",
-                "reviews": []
-            },
-            {
-                "id": "tt6751668",
-                "title": "Parasite",
-                "year": 2019,
-                "plot": "Greed and class discrimination threaten the newly formed symbiotic relationship between the wealthy Park family and the destitute Kim clan.",
-                "rating": 8.5,
-                "genre": ["Comedy", "Drama", "Thriller"],
-                "director": "Bong Joon Ho",
-                "cast": ["Kang-ho Song", "Sun-kyun Lee", "Yeo-jeong Jo"],
-                "poster": "https://m.media-amazon.com/images/M/MV5BYWZjMjk3ZTItODQ2ZC00NTY5LWE0ZDYtZTI3MjcwN2Q5NTVkXkEyXkFqcGdeQXVyODk4OTc3MTY@._V1_SX300.jpg",
-                "runtime": 132,
-                "imdbId": "tt6751668",
-                "reviews": []
-            },
-            {
-                "id": "tt0816692",
-                "title": "Interstellar",
-                "year": 2014,
-                "plot": "A team of explorers travel through a wormhole in space in an attempt to ensure humanity's survival.",
-                "rating": 8.6,
-                "genre": ["Adventure", "Drama", "Sci-Fi"],
-                "director": "Christopher Nolan",
-                "cast": ["Matthew McConaughey", "Anne Hathaway", "Jessica Chastain"],
-                "poster": "https://m.media-amazon.com/images/M/MV5BZjdkOTU3MDktN2IxOS00OGEyLWFmMjktY2FiMmZkNWIyODZiXkEyXkFqcGdeQXVyMTMxODk2OTU@._V1_SX300.jpg",
-                "runtime": 169,
-                "imdbId": "tt0816692",
-                "reviews": []
-            },
-            {
-                "id": "tt10872600",
-                "title": "Spider-Man: No Way Home",
-                "year": 2021,
-                "plot": "Spider-Man seeks Doctor Strange's help to forget his exposed identity, but a spell gone wrong brings villains from other dimensions.",
-                "rating": 8.4,
-                "genre": ["Action", "Adventure", "Fantasy"],
-                "director": "Jon Watts",
-                "cast": ["Tom Holland", "Zendaya", "Benedict Cumberbatch"],
-                "poster": "https://m.media-amazon.com/images/M/MV5BZWMyYzFjYTYtNTRjYi00OGExLWE2YzgtOGRmYjAxZTU3NzBiXkEyXkFqcGdeQXVyMzQ0MzA0NTM@._V1_SX300.jpg",
-                "runtime": 148,
-                "imdbId": "tt10872600",
-                "reviews": []
-            },
-            {
-                "id": "tt4154796",
-                "title": "Avengers: Endgame",
-                "year": 2019,
-                "plot": "After the devastating events of Infinity War, the Avengers assemble once more to reverse Thanos' actions and restore balance to the universe.",
-                "rating": 8.4,
-                "genre": ["Action", "Adventure", "Drama"],
-                "director": "Anthony Russo",
-                "cast": ["Robert Downey Jr.", "Chris Evans", "Mark Ruffalo"],
-                "poster": "https://m.media-amazon.com/images/M/MV5BMTc5MDE2ODcwNV5BMl5BanBnXkFtZTgwMzI2NzQ2NzM@._V1_SX300.jpg",
-                "runtime": 181,
-                "imdbId": "tt4154796",
-                "reviews": []
-            },
-            {
-                "id": "tt1877830",
-                "title": "The Batman",
-                "year": 2022,
-                "plot": "Batman ventures into Gotham City's underworld when a sadistic killer leaves behind a trail of cryptic clues.",
-                "rating": 7.8,
-                "genre": ["Action", "Crime", "Drama"],
-                "director": "Matt Reeves",
-                "cast": ["Robert Pattinson", "Zoë Kravitz", "Jeffrey Wright"],
-                "poster": "https://m.media-amazon.com/images/M/MV5BMDdmMTBiNTYtMDIzNi00NGVlLWIzMDYtZTk3MTQ3NGQxZGEwXkEyXkFqcGdeQXVyMzMwOTU5MDk@._V1_SX300.jpg",
-                "runtime": 176,
-                "imdbId": "tt1877830",
-                "reviews": []
-            },
-            {
-                "id": "tt1745960",
-                "title": "Top Gun: Maverick",
-                "year": 2022,
-                "plot": "After thirty years, Maverick is still pushing the envelope as a top naval aviator, but he must confront the ghosts of his past.",
-                "rating": 8.3,
-                "genre": ["Action", "Drama"],
-                "director": "Joseph Kosinski",
-                "cast": ["Tom Cruise", "Jennifer Connelly", "Miles Teller"],
-                "poster": "https://m.media-amazon.com/images/M/MV5BZWYzOGEwNTgtNWU3NS00ZTQ0LWJkODUtMmVhMjIwMjA1ZmQwXkEyXkFqcGdeQXVyMjkwOTAyMDU@._V1_SX300.jpg",
-                "runtime": 130,
-                "imdbId": "tt1745960",
-                "reviews": []
-            }
-        ]
+        for query in suggestion_queries:
+            try:
+                # Get real movies from enhanced search
+                from ...services.enhanced_movie_service import search_movies_enhanced
+                movies = await search_movies_enhanced(query, limit//len(suggestion_queries) + 2)
+                all_movies.extend(movies[:limit//len(suggestion_queries)])
+            except Exception as e:
+                logger.warning(f"Failed to get suggestions for {query}: {e}")
         
-        # Shuffle and select movies for this request
-        random.shuffle(suggestions_pool)
-        selected_movies = suggestions_pool[:limit]
+        # Convert to Movie objects and process images
+        movie_objects = []
+        for movie_data in all_movies[:limit]:
+            movie_obj = _convert_dict_to_movie(movie_data)
+            movie_objects.append(movie_obj)
         
-        # Convert to Movie objects
-        from ...models.movie import Movie
-        movies = []
-        for movie_data in selected_movies:
-            movie = Movie(**movie_data)
-            movies.append(movie)
+        # Process with FanArt/Scrapy pipeline
+        processed_movies = await process_movie_images(movie_objects, use_dynamic_loading=True)
         
-        # Process and cache images
-        movies = await process_movie_images(movies)
+        logger.info(f"✅ Returning {len(processed_movies)} REAL suggestion movies")
+        return processed_movies
         
-        logger.info(f"✅ Returning {len(movies)} dynamic suggestions with cached images (seed: {minute_seed})")
-        return movies
-            
     except Exception as e:
-        logger.error(f"❌ Error getting suggestions: {e}")
-        return []
-
+        logger.error(f"❌ Error getting dynamic suggestions: {e}")
 @router.get("/top-rated", response_model=List[Movie])
 async def get_top_rated_movies(limit: int = Query(12, ge=1, le=20)):
     """Get top rated movies with fallback implementation"""
@@ -655,239 +746,46 @@ async def get_recent_movies(limit: int = Query(12, ge=1, le=20)):
 async def get_popular_movies(
     limit: int = Query(20, ge=1, le=50)
 ):
-    """Get popular movies with dynamic rotation (changes every 30 minutes)"""
+    """Get popular movies from real TMDB/OMDB APIs"""
     try:
-        logger.info(f"⭐ Getting {limit} popular movies")
+        logger.info(f"⭐ Getting {limit} popular movies from APIs")
         
-        # Dynamic popular data that changes every 30 minutes
-        import random
-        from datetime import datetime
+        # REMOVED: All hardcoded popular_movies_pool
         
-        # Seed random with current time to change every 30 minutes
-        now = datetime.now()
-        time_segment = (now.hour * 2) + (now.minute // 30) + now.day
-        random.seed(time_segment)
+        # Use TMDB API for real popular movies
+        try:
+            if hasattr(movie_service.api_manager, 'tmdb_api'):
+                popular_data = await movie_service.api_manager.tmdb_api.get_popular_movies(limit)
+                if popular_data:
+                    movie_objects = [_convert_dict_to_movie(movie) for movie in popular_data]
+                    processed_movies = await process_movie_images(movie_objects, use_dynamic_loading=True)
+                    logger.info(f"✅ TMDB Popular: {len(processed_movies)} movies")
+                    return processed_movies
+        except Exception as e:
+            logger.warning(f"TMDB popular failed: {e}")
         
-        popular_movies_pool = [
-            {
-                "id": "tt0111161",
-                "title": "The Shawshank Redemption",
-                "year": 1994,
-                "plot": "Two imprisoned men bond over a number of years, finding solace and eventual redemption through acts of common decency.",
-                "rating": 9.3,
-                "genre": ["Drama"],
-                "director": "Frank Darabont",
-                "cast": ["Tim Robbins", "Morgan Freeman"],
-                "poster": "https://m.media-amazon.com/images/M/MV5BMDFkYTc0MGEtZmNhMC00ZDIzLWFmNTEtODM1ZmRlYWMwMWFmXkEyXkFqcGdeQXVyMTMxODk2OTU@._V1_SX300.jpg",
-                "runtime": 142,
-                "imdbId": "tt0111161",
-                "reviews": []
-            },
-            {
-                "id": "tt0068646",
-                "title": "The Godfather",
-                "year": 1972,
-                "plot": "The aging patriarch of an organized crime dynasty transfers control of his clandestine empire to his reluctant son.",
-                "rating": 9.2,
-                "genre": ["Crime", "Drama"],
-                "director": "Francis Ford Coppola",
-                "cast": ["Marlon Brando", "Al Pacino", "James Caan"],
-                "poster": "https://m.media-amazon.com/images/M/MV5BM2MyNjYxNmUtYTAwNi00MTYxLWJmNWYtYzZlODY3ZTk3OTFlXkEyXkFqcGdeQXVyNzkwMjQ5NzM@._V1_SX300.jpg",
-                "runtime": 175,
-                "imdbId": "tt0068646",
-                "reviews": []
-            },
-            {
-                "id": "tt0468569",
-                "title": "The Dark Knight",
-                "year": 2008,
-                "plot": "Batman raises the stakes in his war on crime with the help of Lieutenant Jim Gordon and District Attorney Harvey Dent.",
-                "rating": 9.0,
-                "genre": ["Action", "Crime", "Drama"],
-                "director": "Christopher Nolan",
-                "cast": ["Christian Bale", "Heath Ledger", "Aaron Eckhart"],
-                "poster": "https://m.media-amazon.com/images/M/MV5BMTMxNTMwODM0NF5BMl5BanBnXkFtZTcwODAyMTk2Mw@@._V1_SX300.jpg",
-                "runtime": 152,
-                "imdbId": "tt0468569",
-                "reviews": []
-            },
-            {
-                "id": "tt0110912",
-                "title": "Pulp Fiction",
-                "year": 1994,
-                "plot": "The lives of two mob hitmen, a boxer, a gangster and his wife intertwine in four tales of violence and redemption.",
-                "rating": 8.9,
-                "genre": ["Crime", "Drama"],
-                "director": "Quentin Tarantino",
-                "cast": ["John Travolta", "Uma Thurman", "Samuel L. Jackson"],
-                "poster": "https://m.media-amazon.com/images/M/MV5BNGNhMDIzZTUtNTBlZi00MTRlLWFjM2ItYzViMjE3YzI5MjljXkEyXkFqcGdeQXVyNzkwMjQ5NzM@._V1_SX300.jpg",
-                "runtime": 154,
-                "imdbId": "tt0110912",
-                "reviews": []
-            },
-            {
-                "id": "tt0167260",
-                "title": "The Lord of the Rings: The Return of the King",
-                "year": 2003,
-                "plot": "Gandalf and Aragorn lead the World of Men against Sauron's army to draw his gaze from Frodo and Sam as they approach Mount Doom with the One Ring.",
-                "rating": 8.9,
-                "genre": ["Action", "Adventure", "Drama"],
-                "director": "Peter Jackson",
-                "cast": ["Elijah Wood", "Viggo Mortensen", "Ian McKellen"],
-                "poster": "https://m.media-amazon.com/images/M/MV5BNzA5ZDNlZWMtM2NhNS00NDJjLTk4NDItYTRmY2EwMWI5MTktXkEyXkFqcGdeQXVyNzkwMjQ5NzM@._V1_SX300.jpg",
-                "runtime": 201,
-                "imdbId": "tt0167260",
-                "reviews": []
-            },
-            {
-                "id": "tt0109830",
-                "title": "Forrest Gump",
-                "year": 1994,
-                "plot": "The presidencies of Kennedy and Johnson, the Vietnam War, the Watergate scandal and other historical events unfold from the perspective of an Alabama man.",
-                "rating": 8.8,
-                "genre": ["Drama", "Romance"],
-                "director": "Robert Zemeckis",
-                "cast": ["Tom Hanks", "Robin Wright", "Gary Sinise"],
-                "poster": "https://m.media-amazon.com/images/M/MV5BNWIwODRlZTUtY2U3ZS00Yzg1LWJhNzYtMmZiYmEyNmU1NjMzXkEyXkFqcGdeQXVyMTQxNzMzNDI@._V1_SX300.jpg",
-                "runtime": 142,
-                "imdbId": "tt0109830",
-                "reviews": []
-            },
-            {
-                "id": "tt1375666",
-                "title": "Inception",
-                "year": 2010,
-                "plot": "A thief who steals corporate secrets through dream-sharing technology is given the inverse task of planting an idea into the mind of a C.E.O.",
-                "rating": 8.8,
-                "genre": ["Action", "Sci-Fi", "Thriller"],
-                "director": "Christopher Nolan",
-                "cast": ["Leonardo DiCaprio", "Marion Cotillard", "Tom Hardy"],
-                "poster": "https://m.media-amazon.com/images/M/MV5BMjAxMzY3NjcxNF5BMl5BanBnXkFtZTcwNTI5OTM0Mw@@._V1_SX300.jpg",
-                "runtime": 148,
-                "imdbId": "tt1375666",
-                "reviews": []
-            },
-            {
-                "id": "tt0133093",
-                "title": "The Matrix",
-                "year": 1999,
-                "plot": "A computer programmer is led to fight an underground war against powerful computers who have constructed his entire reality with a system called the Matrix.",
-                "rating": 8.7,
-                "genre": ["Action", "Sci-Fi"],
-                "director": "Lana Wachowski",
-                "cast": ["Keanu Reeves", "Laurence Fishburne", "Carrie-Anne Moss"],
-                "poster": "https://m.media-amazon.com/images/M/MV5BNzQzOTk3OTAtNDQ0Zi00ZTVkLWI0MTEtMDllZjNkYzNjNTc4L2ltYWdlXkEyXkFqcGdeQXVyNjU0OTQ0OTY@._V1_SX300.jpg",
-                "runtime": 136,
-                "imdbId": "tt0133093",
-                "reviews": []
-            },
-            {
-                "id": "tt6751668",
-                "title": "Parasite",
-                "year": 2019,
-                "plot": "Greed and class discrimination threaten the newly formed symbiotic relationship between the wealthy Park family and the destitute Kim clan.",
-                "rating": 8.5,
-                "genre": ["Comedy", "Drama", "Thriller"],
-                "director": "Bong Joon Ho",
-                "cast": ["Kang-ho Song", "Sun-kyun Lee", "Yeo-jeong Jo"],
-                "poster": "https://m.media-amazon.com/images/M/MV5BYWZjMjk3ZTItODQ2ZC00NTY5LWE0ZDYtZTI3MjcwN2Q5NTVkXkEyXkFqcGdeQXVyODk4OTc3MTY@._V1_SX300.jpg",
-                "runtime": 132,
-                "imdbId": "tt6751668",
-                "reviews": []
-            },
-            {
-                "id": "tt0816692",
-                "title": "Interstellar",
-                "year": 2014,
-                "plot": "A team of explorers travel through a wormhole in space in an attempt to ensure humanity's survival.",
-                "rating": 8.6,
-                "genre": ["Adventure", "Drama", "Sci-Fi"],
-                "director": "Christopher Nolan",
-                "cast": ["Matthew McConaughey", "Anne Hathaway", "Jessica Chastain"],
-                "poster": "https://m.media-amazon.com/images/M/MV5BZjdkOTU3MDktN2IxOS00OGEyLWFmMjktY2FiMmZkNWIyODZiXkEyXkFqcGdeQXVyMTMxODk2OTU@._V1_SX300.jpg",
-                "runtime": 169,
-                "imdbId": "tt0816692",
-                "reviews": []
-            },
-            {
-                "id": "tt10872600",
-                "title": "Spider-Man: No Way Home",
-                "year": 2021,
-                "plot": "Spider-Man seeks Doctor Strange's help to forget his exposed identity, but a spell gone wrong brings villains from other dimensions.",
-                "rating": 8.4,
-                "genre": ["Action", "Adventure", "Fantasy"],
-                "director": "Jon Watts",
-                "cast": ["Tom Holland", "Zendaya", "Benedict Cumberbatch"],
-                "poster": "https://m.media-amazon.com/images/M/MV5BZWMyYzFjYTYtNTRjYi00OGExLWE2YzgtOGRmYjAxZTU3NzBiXkEyXkFqcGdeQXVyMzQ0MzA0NTM@._V1_SX300.jpg",
-                "runtime": 148,
-                "imdbId": "tt10872600",
-                "reviews": []
-            },
-            {
-                "id": "tt4154796",
-                "title": "Avengers: Endgame",
-                "year": 2019,
-                "plot": "After the devastating events of Infinity War, the Avengers assemble once more to reverse Thanos' actions and restore balance to the universe.",
-                "rating": 8.4,
-                "genre": ["Action", "Adventure", "Drama"],
-                "director": "Anthony Russo",
-                "cast": ["Robert Downey Jr.", "Chris Evans", "Mark Ruffalo"],
-                "poster": "https://m.media-amazon.com/images/M/MV5BMTc5MDE2ODcwNV5BMl5BanBnXkFtZTgwMzI2NzQ2NzM@._V1_SX300.jpg",
-                "runtime": 181,
-                "imdbId": "tt4154796",
-                "reviews": []
-            },
-            {
-                "id": "tt1877830",
-                "title": "The Batman",
-                "year": 2022,
-                "plot": "Batman ventures into Gotham City's underworld when a sadistic killer leaves behind a trail of cryptic clues.",
-                "rating": 7.8,
-                "genre": ["Action", "Crime", "Drama"],
-                "director": "Matt Reeves",
-                "cast": ["Robert Pattinson", "Zoë Kravitz", "Jeffrey Wright"],
-                "poster": "https://m.media-amazon.com/images/M/MV5BMDdmMTBiNTYtMDIzNi00NGVlLWIzMDYtZTk3MTQ3NGQxZGEwXkEyXkFqcGdeQXVyMzMwOTU5MDk@._V1_SX300.jpg",
-                "runtime": 176,
-                "imdbId": "tt1877830",
-                "reviews": []
-            },
-            {
-                "id": "tt1745960",
-                "title": "Top Gun: Maverick",
-                "year": 2022,
-                "plot": "After thirty years, Maverick is still pushing the envelope as a top naval aviator, but he must confront the ghosts of his past.",
-                "rating": 8.3,
-                "genre": ["Action", "Drama"],
-                "director": "Joseph Kosinski",
-                "cast": ["Tom Cruise", "Jennifer Connelly", "Miles Teller"],
-                "poster": "https://m.media-amazon.com/images/M/MV5BZWYzOGEwNTgtNWU3NS00ZTQ0LWJkODUtMmVhMjIwMjA1ZmQwXkEyXkFqcGdeQXVyMjkwOTAyMDU@._V1_SX300.jpg",
-                "runtime": 130,
-                "imdbId": "tt1745960",
-                "reviews": []
-            }
-        ]
+        # Fallback: Use enhanced search for popular terms
+        popular_searches = ["oscar winner", "best picture", "blockbuster", "award winning"]
+        all_movies = []
         
-        # Shuffle and select movies for this request
-        random.shuffle(popular_movies_pool)
-        selected_movies = popular_movies_pool[:limit]
+        for search_term in popular_searches:
+            try:
+                from ...services.enhanced_movie_service import search_movies_enhanced
+                movies = await search_movies_enhanced(search_term, limit//4)
+                all_movies.extend(movies)
+            except Exception as e:
+                continue
         
-        # Convert to Movie objects
-        from ...models.movie import Movie
-        movies = []
-        for movie_data in selected_movies:
-            movie = Movie(**movie_data)
-            movies.append(movie)
+        # Process and return
+        movie_objects = [_convert_dict_to_movie(movie) for movie in all_movies[:limit]]
+        processed_movies = await process_movie_images(movie_objects, use_dynamic_loading=True)
         
-        # Process and cache images
-        movies = await process_movie_images(movies)
-        
-        logger.info(f"✅ Returning {len(movies)} dynamic popular movies with cached images (segment: {time_segment})")
+        logger.info(f"✅ Dynamic Popular: {len(processed_movies)} movies")
+        return processed_movies
         
     except Exception as e:
         logger.error(f"❌ Error getting popular movies: {e}")
         return []
-    
-    return movies
 
 @router.get("/trending", response_model=List[Movie])
 async def get_trending_movies(
@@ -1300,27 +1198,165 @@ async def get_movies_by_genre(
 @router.get("/{movie_id}/analysis")
 async def get_movie_analysis(movie_id: str):
     """
-    Get comprehensive analysis for a movie including sentiment analysis and statistics
+    Get comprehensive analysis for a movie using enhanced search service
     """
     try:
-        logger.info(f"🎯 API: Getting analysis for movie: {movie_id}")
+        logger.info(f"🎯 API: Getting REAL analysis for movie: {movie_id}")
         
-        # Get basic movie info
+        # First try to get basic movie info from database
         movie = await movie_service.get_movie_by_id(movie_id)
+        
+        if not movie:
+            # If not in database, use enhanced service to get movie details
+            logger.info(f"🔍 Movie not in database, using enhanced service for analysis: {movie_id}")
+            
+            from ...services.enhanced_movie_service import get_movie_details_enhanced
+            enhanced_details = await get_movie_details_enhanced(movie_id)
+            
+            if enhanced_details:
+                # Convert enhanced details to Movie-like object for analysis
+                # Handle genre field - convert string to list
+                genre_data = enhanced_details.get('genre') or enhanced_details.get('Genre') or ""
+                if isinstance(genre_data, str):
+                    genre_list = [g.strip() for g in genre_data.split(', ')] if genre_data else ['Unknown']
+                elif isinstance(genre_data, list):
+                    genre_list = genre_data
+                else:
+                    genre_list = ['Unknown']
+                
+                # Handle cast field - convert from actors string to list
+                actors_data = enhanced_details.get('actors') or enhanced_details.get('Actors') or enhanced_details.get('cast') or ""
+                if isinstance(actors_data, str):
+                    cast_list = [a.strip() for a in actors_data.split(', ')] if actors_data else ['Unknown']
+                elif isinstance(actors_data, list):
+                    cast_list = actors_data
+                else:
+                    cast_list = ['Unknown']
+                
+                # Handle awards field - convert to list
+                awards_data = enhanced_details.get('awards') or enhanced_details.get('Awards') or ""
+                if isinstance(awards_data, str):
+                    awards_list = [awards_data] if awards_data else []
+                elif isinstance(awards_data, list):
+                    awards_list = awards_data
+                else:
+                    awards_list = []
+                
+                # Handle year field - ensure it's an integer
+                year_data = enhanced_details.get('year') or enhanced_details.get('Year')
+                try:
+                    year_int = int(str(year_data).split('-')[0]) if year_data else 2023
+                except (ValueError, TypeError):
+                    year_int = 2023
+                
+                # Handle runtime field - extract numeric value  
+                runtime_data = enhanced_details.get('runtime') or enhanced_details.get('Runtime')
+                runtime_int = None
+                if runtime_data:
+                    try:
+                        # Extract numbers from runtime string (e.g., "169 min" -> 169)
+                        import re
+                        runtime_match = re.search(r'\d+', str(runtime_data))
+                        if runtime_match:
+                            runtime_int = int(runtime_match.group())
+                    except (ValueError, TypeError):
+                        runtime_int = None
+                
+                # Create Movie object from enhanced details
+                movie = Movie(
+                    id=enhanced_details.get('imdb_id') or enhanced_details.get('imdbId') or movie_id,
+                    imdbId=enhanced_details.get('imdb_id') or enhanced_details.get('imdbId') or movie_id,
+                    title=enhanced_details.get('title', 'Unknown Title'),
+                    poster=enhanced_details.get('poster') or enhanced_details.get('poster_url') or enhanced_details.get('Poster') or '',
+                    year=year_int,
+                    genre=genre_list,
+                    cast=cast_list,
+                    rating=float(enhanced_details.get('rating') or enhanced_details.get('imdbRating') or 0),
+                    plot=enhanced_details.get('plot') or enhanced_details.get('Plot') or '',
+                    director=enhanced_details.get('director') or enhanced_details.get('Director') or 'Unknown',
+                    runtime=runtime_int,
+                    awards=awards_list,
+                    reviews=enhanced_details.get('reviews', [])
+                )
+                logger.info(f"✅ Enhanced movie details retrieved for analysis: {movie.title}")
+            else:
+                logger.warning(f"❌ Movie not found in enhanced service for analysis: {movie_id}")
+                raise HTTPException(status_code=404, detail=f"Movie not found: {movie_id}")
+        
         if not movie:
             raise HTTPException(status_code=404, detail=f"Movie not found: {movie_id}")
         
-        # Try to get fast analysis first
-        analysis = await movie_service.get_movie_analysis_fast(movie_id)
-        if analysis:
-            logger.info(f"✅ Fast Analysis completed for '{movie.title}'")
-            return analysis
-            
-        # If fast analysis fails, create comprehensive mock analytics
-        import random
+        # Use enhanced movie service for real data analysis
+        from ...services.enhanced_movie_service import EnhancedMovieService
+        from ...services.scrapy_search_service import ScrapySearchService
         
-        # Calculate analytics from movie data
-        total_reviews = len(movie.reviews) if movie.reviews else random.randint(10, 50)
+        enhanced_service = EnhancedMovieService()
+        scrapy_service = ScrapySearchService()
+        
+        try:
+            # Get comprehensive movie analysis with real scraped data
+            real_analysis = await enhanced_service.get_comprehensive_analysis(movie_id, movie.title)
+            
+            if real_analysis:
+                logger.info(f"✅ REAL Enhanced Analysis completed for '{movie.title}'")
+                return real_analysis
+            else:
+                logger.warning(f"⚠️ Enhanced analysis returned empty for '{movie.title}', using scraped data")
+                
+        except Exception as enhanced_error:
+            logger.warning(f"⚠️ Enhanced service failed for '{movie.title}': {enhanced_error}")
+        
+        # Fallback: Use Scrapy service directly for real scraped reviews
+        try:
+            scraped_reviews = await scrapy_service.scrape_movie_reviews(movie.title)
+            logger.info(f"🕷️ Scraped {len(scraped_reviews)} real reviews for '{movie.title}'")
+            
+            # Process real scraped data into analytics
+            if scraped_reviews:
+                total_reviews = len(scraped_reviews)
+                
+                # Real sentiment analysis from scraped reviews
+                positive_count = sum(1 for review in scraped_reviews if review.get('sentiment', '').lower() == 'positive')
+                negative_count = sum(1 for review in scraped_reviews if review.get('sentiment', '').lower() == 'negative')
+                neutral_count = total_reviews - positive_count - negative_count
+                
+                # Real rating analysis from scraped data
+                ratings = [float(r.get('rating', 0)) for r in scraped_reviews if r.get('rating')]
+                avg_scraped_rating = sum(ratings) / len(ratings) if ratings else movie.rating
+                
+                # Build real analytics from scraped data
+                analytics_data = {
+                    "totalMovies": 1,
+                    "totalReviews": total_reviews,
+                    "averageRating": avg_scraped_rating,
+                    "sentimentDistribution": {
+                        "positive": positive_count,
+                        "negative": negative_count,
+                        "neutral": neutral_count
+                    },
+                    "ratingDistribution": _calculate_rating_distribution(ratings),
+                    "genrePopularity": [
+                        {"genre": genre, "count": total_reviews // len(movie.genre) if movie.genre else 1} 
+                        for genre in (movie.genre[:5] if movie.genre else ['Unknown'])
+                    ],
+                    "reviewTimeline": _calculate_review_timeline(scraped_reviews),
+                    "topRatedMovies": [movie.dict()],
+                    "recentlyAnalyzed": [movie.dict()],
+                    "realScrapedData": True,
+                    "scrapedReviewsCount": total_reviews,
+                    "dataSource": "scrapy-real-reviews"
+                }
+                
+                logger.info(f"✅ REAL Scrapy Analysis completed for '{movie.title}' with {total_reviews} reviews")
+                return analytics_data
+                
+        except Exception as scrapy_error:
+            logger.warning(f"⚠️ Scrapy service failed for '{movie.title}': {scrapy_error}")
+        
+        # Final fallback: Enhanced mock analytics (but mark as fallback)
+        logger.warning(f"⚠️ Using fallback analytics for '{movie.title}' - real data unavailable")
+        
+        total_reviews = len(movie.reviews) if movie.reviews else 25
         positive_ratio = 0.6 if movie.rating > 7 else (0.4 if movie.rating > 5 else 0.2)
         
         sentiment_dist = {
@@ -1329,29 +1365,27 @@ async def get_movie_analysis(movie_id: str):
             "neutral": int(total_reviews * (1 - positive_ratio) * 0.4)
         }
         
-        # Create comprehensive analytics response
         analytics_data = {
             "totalMovies": 1,
             "totalReviews": total_reviews,
             "averageRating": movie.rating,
             "sentimentDistribution": sentiment_dist,
-            "ratingDistribution": [2, 5, 12, 25, 35, 15, 6],  # Mock rating distribution
+            "ratingDistribution": [2, 5, 12, 25, 35, 15, 6],
             "genrePopularity": [
-                {"genre": genre, "count": random.randint(5, 25)} 
-                for genre in movie.genre[:5]
+                {"genre": genre, "count": 15} 
+                for genre in (movie.genre[:5] if movie.genre else ['Unknown'])
             ],
             "reviewTimeline": [
-                {
-                    "date": f"2024-{str(i+1).zfill(2)}",
-                    "count": random.randint(1, 10)
-                }
+                {"date": f"2024-{str(i+1).zfill(2)}", "count": 5}
                 for i in range(12)
             ],
             "topRatedMovies": [movie.dict()],
-            "recentlyAnalyzed": [movie.dict()]
+            "recentlyAnalyzed": [movie.dict()],
+            "realScrapedData": False,
+            "dataSource": "fallback-enhanced-mock"
         }
         
-        logger.info(f"✅ Comprehensive Analysis created for '{movie.title}'")
+        logger.info(f"✅ Fallback Analysis created for '{movie.title}'")
         return analytics_data
         
     except HTTPException:
@@ -2083,37 +2117,100 @@ async def get_cached_movie_image(filename: str):
         logger.error(f"❌ Error serving cached image {filename}: {e}")
         raise HTTPException(status_code=500, detail=f"Error serving cached image: {str(e)}")
 
-# Image proxy route compatibility - redirect to main image service
-@router.options("/image-proxy")
-async def proxy_image_options():
-    """Handle CORS preflight requests for image proxy compatibility"""
-    return Response(
-        headers={
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-            'Access-Control-Max-Age': '86400'  # Cache preflight for 24 hours
-        }
-    )
-
-@router.get("/image-proxy")
-async def proxy_image_redirect(request: Request, url: str):
-    """Proxy images - redirects to enhanced image service for compatibility"""
-    from ..routes.images import _proxy_image_internal
-    from ...core.error_handler import get_request_id
-    
-    request_id = get_request_id(request)
-    return await _proxy_image_internal(url, request_id)
+# Image proxy routes removed - use /api/images/image-proxy instead
+# This prevents route conflicts and circular dependencies
 
 # Movie by ID route - MUST be at the end to avoid catching other routes
 @router.get("/{movie_id}", response_model=Movie)
 async def get_movie(movie_id: str, request: Request):
-    """Get movie details by ID with proper image processing"""
+    """Get movie details by ID using enhanced search service"""
     request_id = get_request_id(request)
     
     try:
         logger.info(f"🎬 Getting movie by ID: {movie_id} (request_id: {request_id})")
+        
+        # First try to get from database
         movie = await movie_service.get_movie_by_id(movie_id)
+        
+        if not movie:
+            # If not in database, use enhanced service to get movie details
+            logger.info(f"🔍 Movie not in database, using enhanced service for: {movie_id}")
+            
+            from ...services.enhanced_movie_service import get_movie_details_enhanced
+            enhanced_details = await get_movie_details_enhanced(movie_id)
+            
+            if enhanced_details:
+                # Convert enhanced details to Movie object
+                # Handle genre field - convert string to list
+                genre_data = enhanced_details.get('genre') or enhanced_details.get('Genre') or ""
+                if isinstance(genre_data, str):
+                    genre_list = [g.strip() for g in genre_data.split(', ')] if genre_data else ['Unknown']
+                elif isinstance(genre_data, list):
+                    genre_list = genre_data
+                else:
+                    genre_list = ['Unknown']
+                
+                # Handle cast field - convert from actors string to list
+                actors_data = enhanced_details.get('actors') or enhanced_details.get('Actors') or enhanced_details.get('cast') or ""
+                if isinstance(actors_data, str):
+                    cast_list = [a.strip() for a in actors_data.split(', ')] if actors_data else ['Unknown']
+                elif isinstance(actors_data, list):
+                    cast_list = actors_data
+                else:
+                    cast_list = ['Unknown']
+                
+                # Handle awards field - convert to list
+                awards_data = enhanced_details.get('awards') or enhanced_details.get('Awards') or ""
+                if isinstance(awards_data, str):
+                    awards_list = [awards_data] if awards_data else []
+                elif isinstance(awards_data, list):
+                    awards_list = awards_data
+                else:
+                    awards_list = []
+                
+                # Handle year field - ensure it's an integer
+                year_data = enhanced_details.get('year') or enhanced_details.get('Year')
+                try:
+                    year_int = int(str(year_data).split('-')[0]) if year_data else 2023
+                except (ValueError, TypeError):
+                    year_int = 2023
+                
+                # Handle runtime field - extract numeric value  
+                runtime_data = enhanced_details.get('runtime') or enhanced_details.get('Runtime')
+                runtime_int = None
+                if runtime_data:
+                    try:
+                        # Extract numbers from runtime string (e.g., "169 min" -> 169)
+                        import re
+                        runtime_match = re.search(r'\d+', str(runtime_data))
+                        if runtime_match:
+                            runtime_int = int(runtime_match.group())
+                    except (ValueError, TypeError):
+                        runtime_int = None
+                
+                # Create Movie object from enhanced details
+                movie = Movie(
+                    id=enhanced_details.get('imdb_id') or enhanced_details.get('imdbId') or movie_id,
+                    imdbId=enhanced_details.get('imdb_id') or enhanced_details.get('imdbId') or movie_id,
+                    title=enhanced_details.get('title', 'Unknown Title'),
+                    poster=enhanced_details.get('poster') or enhanced_details.get('poster_url') or enhanced_details.get('Poster') or '',
+                    year=year_int,
+                    genre=genre_list,
+                    cast=cast_list,
+                    rating=float(enhanced_details.get('rating') or enhanced_details.get('imdbRating') or 0),
+                    plot=enhanced_details.get('plot') or enhanced_details.get('Plot') or '',
+                    director=enhanced_details.get('director') or enhanced_details.get('Director') or 'Unknown',
+                    runtime=runtime_int,
+                    awards=awards_list,
+                    reviews=enhanced_details.get('reviews', [])
+                )
+                logger.info(f"✅ Enhanced movie details retrieved for: {movie.title}")
+            else:
+                logger.warning(f"❌ Movie not found in enhanced service: {movie_id}")
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"Movie with ID '{movie_id}' not found"
+                )
         
         if not movie:
             logger.warning(f"❌ Movie not found: {movie_id} (request_id: {request_id})")

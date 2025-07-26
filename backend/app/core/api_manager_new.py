@@ -45,7 +45,7 @@ class APIManager:
     
     def __init__(self):
         # Load API keys from environment
-        omdb_key = os.getenv("OMDB_API_KEY", "demo_key")
+        omdb_key = os.getenv("OMDB_API_KEY", "4977b044")
         tmdb_key = os.getenv("TMDB_API_KEY", "demo_key_12345")
         
         # Initialize APIs with real keys

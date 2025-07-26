@@ -3,6 +3,7 @@ import type { Metadata } from "next"
 import { Inter, Poppins } from "next/font/google"
 import "./globals.css"
 import { Providers } from "./providers"
+import ChunkErrorBoundary from "@/components/error-boundary/chunk-error-boundary"
 
 const inter = Inter({
   subsets: ["latin"],
@@ -32,12 +33,14 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className={`${inter.variable} ${poppins.variable} font-sans antialiased`}>
-        <Providers>
-          <div className="min-h-screen bg-gradient-to-b from-black via-gray-900 to-black">
-            <div className="absolute inset-0 bg-[url('/grid.svg')] bg-center [mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))]" />
-            <div className="relative">{children}</div>
-          </div>
-        </Providers>
+        <ChunkErrorBoundary>
+          <Providers>
+            <div className="min-h-screen bg-gradient-to-b from-black via-gray-900 to-black">
+              <div className="absolute inset-0 bg-[url('/grid.svg')] bg-center [mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))]" />
+              <div className="relative">{children}</div>
+            </div>
+          </Providers>
+        </ChunkErrorBoundary>
       </body>
     </html>
   )

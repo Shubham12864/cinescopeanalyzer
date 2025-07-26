@@ -1,6 +1,30 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone', // Enable standalone output for Docker
+  
+  // Fix chunk loading errors
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.optimization.splitChunks = {
+        chunks: 'all',
+        cacheGroups: {
+          default: {
+            name: 'commons',
+            minChunks: 2,
+            chunks: 'all',
+            enforce: true,
+          },
+        },
+      };
+    }
+    return config;
+  },
+  
+  // Enable experimental features for stability
+  experimental: {
+    optimizePackageImports: ['@tanstack/react-query'],
+  },
+  
   eslint: {
     ignoreDuringBuilds: false,
   },
@@ -9,7 +33,26 @@ const nextConfig = {
   },
   images: {
     unoptimized: true,
+    domains: [
+      'assets.fanart.tv',
+      'fanart.tv',
+      'image.tmdb.org',
+      'm.media-amazon.com',
+      'ia.media-imdb.com',
+      'via.placeholder.com',
+      'localhost'
+    ],
     remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'assets.fanart.tv',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'fanart.tv', 
+        pathname: '/**',
+      },
       {
         protocol: 'https',
         hostname: 'image.tmdb.org',
@@ -76,6 +119,8 @@ const nextConfig = {
       'dummyimage.com',
       'res.cloudinary.com',
       'cloudinary.com',
+      'assets.fanart.tv',
+      'fanart.tv',
       'localhost'
     ],
     deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],

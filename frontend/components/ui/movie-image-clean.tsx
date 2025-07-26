@@ -21,14 +21,13 @@ export function MovieImage({
   className, 
   priority = false, 
   fill = false,
-  width,
-  height,
+  width = 300,      // ADD DEFAULT WIDTH
+  height = 450,     // ADD DEFAULT HEIGHT
   fallbackSrc
 }: MovieImageProps) {
-  // Generate fallback image with movie title
   const generateFallback = (title: string) => {
     const encodedTitle = encodeURIComponent(title.slice(0, 20))
-    return `https://via.placeholder.com/500x750/1a1a1a/ffffff?text=${encodedTitle}`
+    return `https://via.placeholder.com/300x450/1a1a1a/ffffff?text=${encodedTitle}`
   }
 
   const defaultFallback = fallbackSrc || generateFallback(alt || 'Movie')
@@ -53,7 +52,7 @@ export function MovieImage({
 
   // Update image source when src prop changes
   useEffect(() => {
-    if (!src || src === 'N/A' || src.includes('placeholder') || src.includes('tmdb')) {
+    if (!src || src === 'N/A' || src.includes('placeholder')) {
       setImgSrc(defaultFallback)
       setLoading(false)
       setError(false)
@@ -86,17 +85,9 @@ export function MovieImage({
         priority={priority}
         onError={handleError}
         onLoad={handleLoad}
-        unoptimized={imgSrc.includes('placeholder') || imgSrc.includes('via.placeholder') || imgSrc.includes('media-amazon')}
+        sizes={fill ? "(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw" : undefined}
+        unoptimized={imgSrc.includes('placeholder') || imgSrc.includes('via.placeholder')}
       />
-      
-      {error && imgSrc === defaultFallback && (
-        <div className="absolute inset-0 bg-gradient-to-br from-gray-800 to-gray-900 flex flex-col items-center justify-center text-gray-300">
-          <div className="text-6xl mb-4 opacity-50">🎬</div>
-          <div className="text-sm text-center px-4 font-medium">
-            {alt}
-          </div>
-        </div>
-      )}
     </div>
   )
 }

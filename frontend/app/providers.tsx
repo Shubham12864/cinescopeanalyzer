@@ -7,6 +7,7 @@ import { ReactQueryDevtools } from "@tanstack/react-query-devtools"
 import { useState } from "react"
 import { MovieProvider, useMovieContext } from "@/contexts/movie-context"
 import { ToastContainer } from "@/components/ui/toast"
+import ChunkErrorHandler from "@/components/error-boundary/chunk-error-handler"
 
 function ToastWrapper() {
   const { toasts, removeToast } = useMovieContext()
@@ -29,6 +30,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <MovieProvider>
+        <ChunkErrorHandler />
         {children}
         <ToastWrapper />
         <ReactQueryDevtools initialIsOpen={false} />

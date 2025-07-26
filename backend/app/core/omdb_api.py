@@ -7,18 +7,18 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class OMDbAPI:
-    def __init__(self, api_key: str):
-        self.api_key = api_key
+    def __init__(self, api_key: str = "4977b044"):  # Updated API key
+        self.api_key = api_key or "4977b044"
         self.base_url = "http://www.omdbapi.com"
         self.logger = logging.getLogger(__name__)
 
     async def search_movies(self, query: str, limit: int = 20) -> List[Dict]:
         """Search movies using real OMDB API"""
         if not query.strip():
-            return []        # Check if we have a real API key - remove your actual key from this check
+            return []        # Check if we have a real API key
         if self.api_key in ["demo_key", "", None] or len(self.api_key) < 6:
-            self.logger.warning("⚠️ Using demo OMDB key - get real key at http://www.omdbapi.com/apikey.aspx")
-            return self._get_demo_search_results(query)[:limit]
+            self.logger.error("❌ Invalid OMDB API key - returning empty results")
+            return []
         
         try:
             self.logger.info(f"🔍 OMDB API: Searching for '{query}' with API key length: {len(self.api_key)}")

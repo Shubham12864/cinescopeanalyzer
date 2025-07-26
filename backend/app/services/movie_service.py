@@ -316,87 +316,64 @@ class MovieService:
         return filtered_movies[offset:offset + limit]
     
     async def search_movies(self, query: str, limit: int = 20) -> List[Movie]:
-        """🚀 ENHANCED REAL-TIME SEARCH - Prioritizes OMDB API with proper timeout and retry"""
-        import time
-        start_time = time.time()
-        
+        """Search movies with proper error handling and real data - NO DEMO DATA"""
         try:
-            # Validate input parameters
-            if not query or not query.strip():
-                raise error_handler.handle_validation_error(
-                    "Search query cannot be empty", "query", query
-                )
+            print(f"🔍 MovieService: Searching for '{query}' with limit {limit}")
             
-            if len(query.strip()) > 100:
-                raise error_handler.handle_validation_error(
-                    "Search query too long (max 100 characters)", "query", query
-                )
+            # 1. Try OMDB API first (primary source)
+            if self.api_manager and hasattr(self.api_manager, 'omdb_api'):
+                try:
+                    print("🎬 Trying OMDB API...")
+                    omdb_results = await self.api_manager.omdb_api.search_movies(query, limit)
+                    if omdb_results and len(omdb_results) > 0:
+                        print(f"✅ OMDB returned {len(omdb_results)} results")
+                        # Process and enhance results
+                        processed_results = []
+                        for movie_data in omdb_results:
+                            try:
+                                # Convert OMDB data to Movie object
+                                movie = Movie(
+                                    id=movie_data.get('imdbID', ''),
+                                    imdbId=movie_data.get('imdbID', ''),
+                                    title=movie_data.get('Title', ''),
+                                    year=int(movie_data.get('Year', '0')) if movie_data.get('Year', '0').isdigit() else 0,
+                                    genre=movie_data.get('Genre', '').split(', ') if movie_data.get('Genre') else [],
+                                    director=movie_data.get('Director', ''),
+                                    cast=movie_data.get('Actors', '').split(', ') if movie_data.get('Actors') else [],
+                                    plot=movie_data.get('Plot', ''),
+                                    poster=movie_data.get('Poster', ''),
+                                    rating=float(movie_data.get('imdbRating', '0')) if movie_data.get('imdbRating', '0') != 'N/A' else 0,
+                                    runtime=int(movie_data.get('Runtime', '0').replace(' min', '')) if movie_data.get('Runtime', '0') != 'N/A' else 0,
+                                    reviews=[]
+                                )
+                                processed_results.append(movie)
+                            except Exception as e:
+                                print(f"❌ Error processing movie: {e}")
+                                continue
+                        
+                        if processed_results:
+                            print(f"✅ Returning {len(processed_results)} processed movies")
+                            return processed_results[:limit]
+                except Exception as e:
+                    print(f"❌ OMDB search failed: {e}")
             
-            if limit <= 0 or limit > 100:
-                raise error_handler.handle_validation_error(
-                    "Limit must be between 1 and 100", "limit", limit
-                )
+            # 2. Try comprehensive service if available
+            if hasattr(self, 'comprehensive_service') and self.comprehensive_service:
+                try:
+                    print("🎬 Trying comprehensive service...")
+                    comprehensive_results = await self.comprehensive_service.search_movies(query, limit)
+                    if comprehensive_results and len(comprehensive_results) > 0:
+                        print(f"✅ Comprehensive service returned {len(comprehensive_results)} results")
+                        return comprehensive_results[:limit]
+                except Exception as e:
+                    print(f"❌ Comprehensive service failed: {e}")
             
-            sanitized_query = query.strip()
-            self.logger.info(f"🔍 ENHANCED Search: '{sanitized_query}' (limit: {limit})")
-            
-            # STEP 1: OMDB API with retry mechanism and 8-second timeout (highest priority)
-            try:
-                omdb_results = await self._search_omdb_with_retry(sanitized_query, limit)
-                if omdb_results:
-                    self.logger.info(f"✅ OMDB SUCCESS: {len(omdb_results)} fresh results")
-                    # Cache successful OMDB results
-                    await self._cache_search_results(f"search:{query.lower()}:{limit}", omdb_results)
-                    return omdb_results[:limit]
-            except Exception as omdb_error:
-                self.logger.warning(f"⚠️ OMDB API failed: {omdb_error}")
-            
-            # STEP 2: Web scraping as secondary option (before cache)
-            scraping_results = await self._search_with_web_scraping(query, limit)
-            if scraping_results:
-                self.logger.info(f"✅ Web Scraping SUCCESS: {len(scraping_results)} movies")
-                await self._cache_search_results(f"search:{query.lower()}:{limit}", scraping_results)
-                return scraping_results[:limit]
-            
-            # STEP 3: Cache check as tertiary fallback
-            cache_key = f"search:{query.lower()}:{limit}"
-            cached_result = await self._check_cache(cache_key)
-            if cached_result:
-                self.logger.info(f"⚡ Cache FALLBACK - returning {len(cached_result)} results")
-                return cached_result[:limit]
-            
-            # STEP 4: Database search as quaternary fallback
-            db_results = await self._search_movies_in_db(query, limit)
-            if db_results:
-                movies = [self._convert_dict_to_movie(data) for data in db_results if data]
-                movies = [m for m in movies if m is not None]  # Filter out None results
-                if movies:
-                    self.logger.info(f"💾 Database FALLBACK - returning {len(movies)} results")
-                    return movies[:limit]
-            
-            # STEP 5: Use enhanced web scraping as final fallback
-            elapsed = (time.time() - start_time) * 1000
-            self.logger.warning(f"❌ No API results found for '{query}' - trying enhanced web scraping after {elapsed:.0f}ms")
-            
-            # Use enhanced web scraping that doesn't require Scrapy
-            enhanced_scraping_results = await self._enhanced_web_search(query, limit)
-            if enhanced_scraping_results:
-                self.logger.info(f"🌐 Enhanced scraping SUCCESS: {len(enhanced_scraping_results)} movies")
-                return enhanced_scraping_results
-            
-            self.logger.warning(f"❌ All search methods exhausted for '{query}' - returning empty list")
+            # 3. Return empty list - NO DEMO DATA
+            print(f"❌ No results found for: '{query}' - returning empty list")
             return []
             
         except Exception as e:
-            elapsed = (time.time() - start_time) * 1000
-            self.logger.error(f"❌ Search failed after {elapsed:.0f}ms: {e}")
-            # Try enhanced scraping as last resort
-            try:
-                fallback_results = await self._enhanced_web_search(query, limit)
-                if fallback_results:
-                    return fallback_results
-            except Exception:
-                pass
+            print(f"❌ Search completely failed for '{query}': {str(e)}")
             return []
 
     async def _enhanced_web_search(self, query: str, limit: int) -> List[Movie]:
@@ -415,7 +392,7 @@ class MovieService:
                         'genre': ['Action', 'Sci-Fi', 'Thriller'],
                         'director': 'Christopher Nolan',
                         'cast': ['Leonardo DiCaprio', 'Marion Cotillard', 'Tom Hardy'],
-                        'poster': 'https://m.media-amazon.com/images/M/MV5BMjAxMzY3NjcxNF5BMl5BanBnXkFtZTcwNTI5OTM0Mw@@._V1_SX300.jpg',
+                        'poster': 'https://m.media-amazon.com/images/M/MV5BMjAxMzY3NjcwOF5BMl5BanBnXkFtZTcwNTI5OTM0Mw@@._V1_SX300.jpg',
                         'runtime': 148,
                         'imdbId': 'tt1375666'
                     }
@@ -429,7 +406,7 @@ class MovieService:
                         'genre': ['Action', 'Crime', 'Thriller'],
                         'director': 'Chad Stahelski',
                         'cast': ['Keanu Reeves', 'Michael Nyqvist', 'Alfie Allen'],
-                        'poster': 'https://m.media-amazon.com/images/M/MV5BMTU2NjA1ODgzMF5BMl5BanBnXkFtZTgwMTM2MTI4MjE@._V1_SX300.jpg',
+                        'poster': 'https://m.media-amazon.com/images/M/MV5BMTU2NjA1ODgzMF5BMl5BanBnXkFtZTcwMTU0NTIzMw@@._V1_SX300.jpg',
                         'runtime': 101,
                         'imdbId': 'tt2911666'
                     },
@@ -441,7 +418,7 @@ class MovieService:
                         'genre': ['Action', 'Crime', 'Thriller'],
                         'director': 'Chad Stahelski',
                         'cast': ['Keanu Reeves', 'Riccardo Scamarcio', 'Ian McShane'],
-                        'poster': 'https://m.media-amazon.com/images/M/MV5BMjE2NDkxNTY2M15BMl5BanBnXkFtZTgwMDc2NzE0MTI@._V1_SX300.jpg',
+                        'poster': 'https://m.media-amazon.com/images/M/MV5BMjE2NDkxNTY2M15BMl5BanBnXkFtZTcwODAyMTk2Mw@@._V1_SX300.jpg',
                         'runtime': 122,
                         'imdbId': 'tt4425200'
                     }
@@ -697,7 +674,9 @@ class MovieService:
                 "plot": "After the devastating events of Infinity War, the universe is in ruins. With the help of remaining allies, the Avengers assemble once more to reverse Thanos' actions.",
                 "genre": ["Action", "Adventure", "Drama"], "director": "Anthony Russo",
                 "cast": ["Robert Downey Jr.", "Chris Evans", "Mark Ruffalo"],
-                "poster": "https://m.media-amazon.com/images/M/MV5BMTc5MDE2ODcwNV5BMl5BanBnXkFtZTgwMzI2NzQ2NzM@._V1_SX300.jpg"
+                "poster": "https://m.media-amazon.com/images/M/MV5BMTc5MDE2ODcwNV5BMl5BanBnXkFtZTgwMzI2NzQ2NzM@._V1_SX300.jpg",
+                "runtime": 181,
+                "imdbId": "tt4154796"
             }
         ]
         
@@ -830,6 +809,47 @@ class MovieService:
         
         self.logger.warning(f"❌ Movie {movie_id} not found anywhere")
         return None
+    
+    async def get_movie_analysis(self, movie_id: str) -> Optional[AnalyticsData]:
+        """Get comprehensive analysis data for a specific movie with enhanced insights"""
+        movie = await self.get_movie_by_id(movie_id)
+        if not movie:
+            self.logger.warning(f"Movie {movie_id} not found for analysis")
+            return None
+        
+        self.logger.info(f"🔍 Analyzing movie: {movie.title}")
+          # Try to enrich movie data with scraping if possible
+        try:
+            if self.api_manager.scrapers:
+                self.logger.info(f"🕷️ Enriching {movie.title} with web scraping data...")
+                scraping_results = await self.api_manager._scrape_movie_data('imdb', movie.title)
+                if scraping_results and 'reviews' in scraping_results:
+                    # Convert scraped reviews to Review objects
+                    scraped_reviews = scraping_results['reviews']
+                    for review_data in scraped_reviews:
+                        try:
+                            # Ensure review_data is a dict, if it's already a Review object, convert to dict
+                            if hasattr(review_data, '__dict__'):
+                                review_dict = review_data.__dict__
+                            else:
+                                review_dict = review_data
+                            
+                            review_obj = Review(
+                                id=review_dict.get('id', f'scraped-{len(movie.reviews)}'),
+                                author=review_dict.get('author', 'Anonymous'),
+                                content=review_dict.get('content', ''),
+                                rating=review_dict.get('rating', 5.0),
+                                sentiment=review_dict.get('sentiment', 'neutral'),
+                                date=review_dict.get('date', '2024-01-01')
+                            )
+                            movie.reviews.append(review_obj)
+                        except Exception as e:
+                            self.logger.warning(f"Failed to convert review: {e}")
+                            continue
+                    
+                    self.logger.info(f"✅ Added {len(scraped_reviews)} scraped reviews")
+        except Exception as e:
+            self.logger.error(f"Error in review scraping: {e}")
     
     async def get_movie_analysis(self, movie_id: str) -> Optional[AnalyticsData]:
         """Get comprehensive analysis data for a specific movie with enhanced insights"""

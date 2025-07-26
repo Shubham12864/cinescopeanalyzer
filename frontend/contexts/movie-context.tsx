@@ -103,56 +103,11 @@ export function MovieProvider({ children }: { children: React.ReactNode }) {
   const clearError = useCallback(() => {
     setError(null)
   }, [])
+  // Remove demo data - force real backend connection
   const loadMockData = useCallback(() => {
-    // Fallback mock data when backend is not available
-    const mockMovies: Movie[] = [
-      {
-        id: '1',
-        title: 'The Dark Knight',
-        plot: 'Batman faces the Joker in Gotham City',
-        rating: 9.0,
-        genre: ['Action', 'Crime', 'Drama'],
-        year: 2008,
-        poster: 'https://m.media-amazon.com/images/M/MV5BMTMxNTMwODM0NF5BMl5BanBnXkFtZTcwODAyMTk2Mw@@._V1_SX300.jpg',
-        omdbPoster: 'https://m.media-amazon.com/images/M/MV5BMTMxNTMwODM0NF5BMl5BanBnXkFtZTcwODAyMTk2Mw@@._V1_SX300.jpg',
-        reviews: [],
-        imdbId: 'tt0468569',
-        runtime: 152,
-        cast: ['Christian Bale', 'Heath Ledger', 'Aaron Eckhart'],
-        director: 'Christopher Nolan'
-      },      {
-        id: '2',
-        title: 'Inception',
-        plot: 'A thief enters dreams to steal secrets',
-        rating: 8.8,
-        genre: ['Action', 'Sci-Fi', 'Thriller'],
-        year: 2010,
-        poster: 'https://m.media-amazon.com/images/M/MV5BMjAxMzY3NjcxNF5BMl5BanBnXkFtZTcwNTI5OTM0Mw@@._V1_SX300.jpg',
-        omdbPoster: 'https://m.media-amazon.com/images/M/MV5BMjAxMzY3NjcxNF5BMl5BanBnXkFtZTcwNTI5OTM0Mw@@._V1_SX300.jpg',
-        reviews: [],
-        imdbId: 'tt1375666',
-        runtime: 148,
-        cast: ['Leonardo DiCaprio', 'Marion Cotillard', 'Tom Hardy'],
-        director: 'Christopher Nolan'
-      },
-      {
-        id: '3',
-        title: 'The Matrix',
-        plot: 'A computer hacker discovers reality is a simulation',
-        rating: 8.7,
-        genre: ['Action', 'Sci-Fi'],
-        year: 1999,
-        poster: 'https://m.media-amazon.com/images/M/MV5BNzQzOTk3OTAtNDQ0Zi00ZTVkLWI0MTEtMDllZjNkYzNjNTc4L2ltYWdlXkEyXkFqcGdeQXVyNjU0OTQ0OTY@._V1_SX300.jpg',
-        omdbPoster: 'https://m.media-amazon.com/images/M/MV5BNzQzOTk3OTAtNDQ0Zi00ZTVkLWI0MTEtMDllZjNkYzNjNTc4L2ltYWdlXkEyXkFqcGdeQXVyNjU0OTQ0OTY@._V1_SX300.jpg',
-        reviews: [],
-        imdbId: 'tt0133093',
-        runtime: 136,
-        cast: ['Keanu Reeves', 'Laurence Fishburne', 'Carrie-Anne Moss'],
-        director: 'The Wachowskis'
-      }
-    ]
-    setMovies(mockMovies)
-    console.log('📦 Loaded mock data with', mockMovies.length, 'movies')
+    console.log('❌ No demo data - backend connection required')
+    setMovies([])
+    setError('Backend connection required for movie data')
   }, [])
 
   const getMovieById = useCallback(async (id: string): Promise<Movie | null> => {
@@ -218,16 +173,11 @@ export function MovieProvider({ children }: { children: React.ReactNode }) {
       }
       
       // Only use mock data if backend is truly unreachable
-      if (!isBackendConnected) {
-        console.log('📦 Backend unavailable, loading mock data')
-        setIsDemoMode(true)
-        loadMockData()
-      } else {
-        console.log('🔄 Backend seems connected but request failed, retrying connection test...')
-        setIsBackendConnected(false)
-        setIsDemoMode(true)
-        loadMockData()
-      }
+      console.log('❌ Backend unavailable - no movies to display')
+      setError('Backend connection required - no demo data available')
+      setMovies([])
+      setIsBackendConnected(false)
+      setIsDemoMode(false) // No demo mode
     } finally {
       setIsLoading(false)
     }
@@ -262,25 +212,21 @@ export function MovieProvider({ children }: { children: React.ReactNode }) {
       const debouncedSearchFn = async (searchQuery: string, signal?: AbortSignal) => {
         console.log(`🔍 Debounced search executing for: "${searchQuery}"`)
         
-        // Check cache first for immediate response
-        const cacheKey = ClientCache.generateSearchKey(searchQuery, filters)
-        const cachedResult = clientCache.get<Movie[]>(cacheKey)
-        
-        if (cachedResult) {
-          console.log(`💾 Using cached search results for: "${searchQuery}"`)
-          return cachedResult
+        try {
+          // Pass abort signal to API call if supported
+          const result = await movieApi.searchMovies(searchQuery, filters)
+          
+          // Cache successful results for 2 hours as per requirements
+          if (result && result.length > 0) {
+            clientCache.set(cacheKey, result, 2 * 60 * 60 * 1000) // 2 hours
+            console.log(`💾 Cached search results for: "${searchQuery}" (${result.length} movies)`)
+          }
+          
+          return result
+        } catch (error) {
+          console.error(`❌ Search API call failed for "${searchQuery}":`, error)
+          throw error
         }
-        
-        // Pass abort signal to API call if supported
-        const result = await movieApi.searchMovies(searchQuery, filters)
-        
-        // Cache successful results for 2 hours as per requirements
-        if (result && result.length > 0) {
-          clientCache.set(cacheKey, result, 2 * 60 * 60 * 1000) // 2 hours
-          console.log(`💾 Cached search results for: "${searchQuery}" (${result.length} movies)`)
-        }
-        
-        return result
       }
       
       const data = await searchDebouncerRef.current.search(debouncedSearchFn, query)
@@ -310,7 +256,7 @@ export function MovieProvider({ children }: { children: React.ReactNode }) {
       
       console.error('❌ Debounced search failed:', err)
       setIsBackendConnected(false) // Mark backend as disconnected
-      setIsDemoMode(true)
+      setIsDemoMode(false) // No demo mode
       
       // Provide specific, user-friendly error messages
       if (err instanceof Error) {
@@ -341,8 +287,7 @@ export function MovieProvider({ children }: { children: React.ReactNode }) {
         setError('Unable to search movies. Please check your connection and try again.')
       }
       
-      // Set empty results instead of falling back to mock data
-      // This prevents showing demo data when real search should be attempted
+      // Set empty results - no demo data fallback
       setMovies([])
       console.log(`❌ Debounced search failed for "${query}" - showing empty results with clear error message`)
       
@@ -392,12 +337,14 @@ export function MovieProvider({ children }: { children: React.ReactNode }) {
       } catch (movieError) {
         console.error('❌ Failed to load any movies from backend:', movieError)
         setIsBackendConnected(false)
-        loadMockData()
+        setError('Backend connection required - no movies available')
+        setMovies([])
       }
     } catch (error) {
       console.error('❌ Backend connection failed:', error)
       setIsBackendConnected(false)
-      loadMockData()
+      setError('Backend connection failed - no movies available')
+      setMovies([])
     }
   }, [loadMockData])
 

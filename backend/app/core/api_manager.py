@@ -18,14 +18,18 @@ except ImportError as e:
     SCRAPERS_AVAILABLE = False
     logging.warning(f"Web scrapers not available: {e}")
 
-# Import Scrapy search service
+# Import Scrapy search service with detailed error handling
 try:
     from ..services.scrapy_search_service import ScrapySearchService
     SCRAPY_SEARCH_AVAILABLE = True
+    logging.info("✅ ScrapySearchService import successful")
 except ImportError as e:
     # Handle missing scrapy dependencies gracefully
     SCRAPY_SEARCH_AVAILABLE = False
-    logging.warning(f"Scrapy search service not available: {e}")
+    logging.info(f"ℹ️ ScrapySearchService not available (using fallbacks): {e}")
+except Exception as e:
+    SCRAPY_SEARCH_AVAILABLE = False
+    logging.warning(f"⚠️ Unexpected error importing ScrapySearchService: {e}")
 
 # Import robust scraping service (always available)
 try:
@@ -102,10 +106,12 @@ class APIManager:
         if SCRAPY_SEARCH_AVAILABLE:
             try:
                 self.scrapy_search = ScrapySearchService()
-                self.logger.info("🕷️ Scrapy search service initialized")
+                self.logger.info("🕷️ Scrapy search service initialized successfully")
             except Exception as e:
-                self.logger.warning(f"Failed to initialize Scrapy search: {e}")
+                self.logger.warning(f"⚠️ Failed to initialize Scrapy search: {e}")
                 self.scrapy_search = None
+        else:
+            self.logger.info("ℹ️ Scrapy search service not available, using other search methods")
         
         # Initialize robust scraping service (fallback)
         self.robust_scraping = None

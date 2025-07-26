@@ -18,12 +18,12 @@ class OMDbAPI:
         """Search for movies using OMDB API"""
         self.logger.info(f"🔍 OMDB search started for: '{query}' with key: {self.api_key[:8] if self.api_key else 'None'}...")
         
-        # Force using real API key - we have a valid one: 2f777f63
+        # Force using real API key - we have a valid one: 4977b044
         if not query:
             return []
             
         # Use real OMDB API key
-        if self.api_key == "2f777f63" or (self.api_key and self.api_key not in ["demo_key", "", None]):
+        if self.api_key == "4977b044" or (self.api_key and self.api_key not in ["demo_key", "", None]):
             use_real_api = True
         else:
             use_real_api = False
