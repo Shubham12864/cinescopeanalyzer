@@ -136,6 +136,22 @@ async def get_analytics():
     analytics = await movie_service.get_analytics()
     return analytics
 
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Clean up resources on shutdown"""
+    try:
+        # Close Reddit service sessions
+        from app.services.reddit_review_service import reddit_review_service
+        await reddit_review_service.close_session()
+        
+        # Close any other async resources
+        from app.core.service_manager import service_manager
+        await service_manager.cleanup()
+        
+        print("✅ Application shutdown complete")
+    except Exception as e:
+        print(f"⚠️ Shutdown cleanup error: {e}")
+
 if __name__ == "__main__":
     uvicorn.run(
         "app.main:app",

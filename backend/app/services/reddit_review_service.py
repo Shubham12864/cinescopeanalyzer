@@ -11,7 +11,7 @@ import logging
 import os
 import json
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 
 logger = logging.getLogger(__name__)
@@ -48,7 +48,13 @@ class RedditReviewService:
         
         # Cache for performance
         self.review_cache = {}
-        self.cache_ttl = 3600  # 1 hour
+        self.cache_duration = timedelta(hours=1)
+        
+        # Rate limiting
+        self.rate_limit_delay = 2.0  # Increased from 0.5 to 2 seconds
+        
+        # Retry settings
+        self.max_retries = 1  # Reduced from 3 to 1
         
         logger.info("💬 Reddit Review Service initialized")
         logger.info(f"🎯 Target subreddits: {len(self.movie_subreddits)} movie communities")
@@ -115,310 +121,79 @@ class RedditReviewService:
             logger.warning(f"⚠️ Reddit OAuth error: {e}")
     
     async def get_movie_reviews(self, movie_title: str, year: str = None, limit: int = 10) -> List[Dict[str, Any]]:
-        """
-        Get movie reviews from Reddit
-        
-        Args:
-            movie_title: Movie title to search for
-            year: Movie year (optional, improves accuracy)
-            limit: Maximum number of reviews to return
-            
-        Returns:
-            List of review dictionaries with user discussions
-        """
-        # Ensure session is available (reinitialize if closed)
-        if not self.is_initialized or not self.session or self.session.closed:
-            await self.initialize()
-        
-        # Check cache first
-        cache_key = f"{movie_title}_{year}_{limit}"
-        if cache_key in self.review_cache:
-            cached_data = self.review_cache[cache_key]
-            if (datetime.now() - cached_data['timestamp']).seconds < self.cache_ttl:
-                logger.info(f"💾 Using cached Reddit reviews for: {movie_title}")
-                return cached_data['reviews']
-        
-        logger.info(f"💬 Getting Reddit reviews for: '{movie_title}' ({year})")
-        
+        """Get movie reviews with proper session cleanup"""
+        session = None
         try:
+            logger.info(f"💬 Getting Reddit reviews for: '{movie_title}' ({year})")
+            
+            # Create session with proper cleanup
+            timeout = aiohttp.ClientTimeout(total=8)
+            session = aiohttp.ClientSession(
+                timeout=timeout,
+                headers={'User-Agent': 'CineScopeAnalyzer/2.0'}
+            )
+            
             all_reviews = []
             
-            # Search each movie subreddit
-            for subreddit in self.movie_subreddits:
+            # Reduced subreddit list to avoid rate limits
+            active_subreddits = ['movies', 'TrueFilm']  # Only 2 subreddits
+            
+            for subreddit in active_subreddits:
                 try:
-                    subreddit_reviews = await self._search_subreddit_for_movie(
-                        subreddit, movie_title, year, limit_per_sub=3
+                    subreddit_reviews = await self._search_subreddit_safe(
+                        session, subreddit, movie_title, year, limit_per_sub=2
                     )
                     all_reviews.extend(subreddit_reviews)
                     
-                    # Rate limiting
-                    await asyncio.sleep(0.5)
+                    # Longer delay to avoid rate limits
+                    await asyncio.sleep(3.0)  # Increased from 0.5 to 3 seconds
                     
                 except Exception as e:
-                    logger.warning(f"⚠️ Failed to search r/{subreddit}: {e}")
+                    logger.warning(f"⚠️ Subreddit {subreddit} failed: {e}")
                     continue
             
-            # Sort by relevance and engagement
-            all_reviews.sort(key=lambda x: (
-                x.get('score', 0) * 0.4 +  # Reddit score
-                x.get('num_comments', 0) * 0.3 +  # Comment count
-                x.get('relevance_score', 0) * 0.3  # Title relevance
-            ), reverse=True)
-            
-            # Limit results
+            # Sort and return best reviews
+            all_reviews.sort(key=lambda x: x.get('score', 0), reverse=True)
             final_reviews = all_reviews[:limit]
             
-            # If no reviews found, add sample reviews for popular movies
-            if not final_reviews and movie_title.lower() in ['the matrix', 'inception', 'interstellar', 'pulp fiction', 'the godfather']:
-                final_reviews = self._get_sample_reviews(movie_title, year)
-                logger.info(f"📝 Using sample reviews for popular movie: {movie_title}")
-            
-            # Cache results
-            self.review_cache[cache_key] = {
-                'reviews': final_reviews,
-                'timestamp': datetime.now()
-            }
-            
-            logger.info(f"✅ Found {len(final_reviews)} Reddit reviews from {len(self.movie_subreddits)} subreddits")
+            logger.info(f"✅ Found {len(final_reviews)} Reddit reviews")
             return final_reviews
             
         except Exception as e:
-            logger.error(f"❌ Reddit reviews failed for '{movie_title}': {e}")
+            logger.error(f"❌ Reddit reviews failed: {e}")
             return []
-    
-    async def _search_subreddit_for_movie(self, subreddit: str, movie_title: str, year: str = None, limit_per_sub: int = 5) -> List[Dict[str, Any]]:
-        """Search a specific subreddit for movie discussions"""
+        
+        finally:
+            # CRITICAL: Always close session
+            if session and not session.closed:
+                await session.close()
+
+    async def _search_subreddit_safe(self, session, subreddit: str, movie_title: str, year: str, limit_per_sub: int) -> List[Dict]:
+        """Safe subreddit search with error handling"""
         try:
-            # First try public JSON endpoint (no auth required)
             search_url = f"{self.reddit_base_url}/r/{subreddit}/search.json"
             params = {
-                'q': movie_title,
-                'restrict_sr': 'true',
+                'q': f'{movie_title} {year}' if year else movie_title,
+                'restrict_sr': 'on',
                 'sort': 'relevance',
-                'limit': limit_per_sub,
-                't': 'all'
+                'limit': limit_per_sub
             }
             
-            # Use minimal headers for public access
-            headers = {
-                'User-Agent': 'CineScopeAnalyzer/2.0 (Movie Review Aggregator)'
-            }
-            
-            async with self.session.get(search_url, params=params, headers=headers) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    
-                    reviews = []
-                    if 'data' in data and 'children' in data['data']:
-                        for post in data['data']['children']:
-                            post_data = post.get('data', {})
-                            
-                            # Calculate relevance score
-                            relevance = self._calculate_relevance(post_data.get('title', ''), movie_title)
-                            
-                            if relevance > 0.3:  # Only include relevant posts
-                                review = {
-                                    'title': post_data.get('title', ''),
-                                    'author': post_data.get('author', 'Unknown'),
-                                    'score': post_data.get('score', 0),
-                                    'num_comments': post_data.get('num_comments', 0),
-                                    'created_utc': post_data.get('created_utc', 0),
-                                    'selftext': post_data.get('selftext', '')[:500],  # Limit text
-                                    'url': f"https://reddit.com{post_data.get('permalink', '')}",
-                                    'subreddit': subreddit,
-                                    'source': 'reddit_api',
-                                    'relevance_score': relevance,
-                                    'upvote_ratio': post_data.get('upvote_ratio', 0),
-                                    'is_discussion': 'discussion' in post_data.get('title', '').lower(),
-                                    'is_review': any(word in post_data.get('title', '').lower() 
-                                                   for word in ['review', 'thoughts', 'opinion', 'watched'])
-                                }
-                                
-                                # Add timestamp formatting
-                                if review['created_utc']:
-                                    review['created_date'] = datetime.fromtimestamp(review['created_utc']).strftime('%Y-%m-%d')
-                                
-                                reviews.append(review)
-                    
-                    logger.debug(f"📝 Found {len(reviews)} relevant posts in r/{subreddit}")
-                    return reviews
+            async with session.get(search_url, params=params) as response:
+                if response.status == 429:  # Rate limited
+                    logger.warning(f"⚠️ Rate limited on r/{subreddit}")
+                    return []
                 
-                else:
-                    logger.warning(f"⚠️ Reddit search failed for r/{subreddit}: {response.status}")
-                    # Try fallback: get hot posts from subreddit
-                    return await self._get_subreddit_hot_posts(subreddit, movie_title, limit_per_sub)
-                    
-        except Exception as e:
-            logger.warning(f"⚠️ Subreddit search failed for r/{subreddit}: {e}")
-            # Try fallback method
-            return await self._get_subreddit_hot_posts(subreddit, movie_title, limit_per_sub)
-    
-    async def _get_subreddit_hot_posts(self, subreddit: str, movie_title: str, limit: int = 5) -> List[Dict[str, Any]]:
-        """Fallback: Get hot posts from subreddit and filter for movie"""
-        try:
-            hot_url = f"{self.reddit_base_url}/r/{subreddit}/hot.json"
-            params = {'limit': 25}  # Get more posts to filter
-            headers = {'User-Agent': 'CineScopeAnalyzer/2.0 (Movie Review Aggregator)'}
-            
-            async with self.session.get(hot_url, params=params, headers=headers) as response:
                 if response.status == 200:
                     data = await response.json()
-                    
-                    reviews = []
-                    if 'data' in data and 'children' in data['data']:
-                        for post in data['data']['children']:
-                            post_data = post.get('data', {})
-                            post_title = post_data.get('title', '').lower()
-                            
-                            # Check if post mentions the movie
-                            movie_words = movie_title.lower().split()
-                            if any(word in post_title for word in movie_words if len(word) > 3):
-                                relevance = self._calculate_relevance(post_data.get('title', ''), movie_title)
-                                
-                                if relevance > 0.2:  # Lower threshold for fallback
-                                    review = {
-                                        'title': post_data.get('title', ''),
-                                        'author': post_data.get('author', 'Reddit User'),
-                                        'score': post_data.get('score', 0),
-                                        'num_comments': post_data.get('num_comments', 0),
-                                        'created_utc': post_data.get('created_utc', 0),
-                                        'selftext': post_data.get('selftext', '')[:500],
-                                        'url': f"https://reddit.com{post_data.get('permalink', '')}",
-                                        'subreddit': subreddit,
-                                        'source': 'reddit_fallback',
-                                        'relevance_score': relevance,
-                                        'upvote_ratio': post_data.get('upvote_ratio', 0.8),
-                                        'is_discussion': True,
-                                        'is_review': 'review' in post_title or 'thoughts' in post_title
-                                    }
-                                    
-                                    if review['created_utc']:
-                                        review['created_date'] = datetime.fromtimestamp(review['created_utc']).strftime('%Y-%m-%d')
-                                    
-                                    reviews.append(review)
-                                    
-                                    if len(reviews) >= limit:
-                                        break
-                    
-                    logger.debug(f"📝 Fallback found {len(reviews)} relevant posts in r/{subreddit}")
-                    return reviews
+                    return self._process_reddit_data(data, movie_title)
                 else:
-                    logger.warning(f"⚠️ Hot posts failed for r/{subreddit}: {response.status}")
+                    logger.warning(f"⚠️ Reddit API error {response.status} for r/{subreddit}")
                     return []
                     
         except Exception as e:
-            logger.warning(f"⚠️ Hot posts fallback failed for r/{subreddit}: {e}")
+            logger.warning(f"⚠️ Subreddit search failed for r/{subreddit}: {e}")
             return []
-    
-    def _calculate_relevance(self, post_title: str, movie_title: str) -> float:
-        """Calculate how relevant a Reddit post is to the movie"""
-        try:
-            post_lower = post_title.lower()
-            movie_lower = movie_title.lower()
-            
-            # Exact title match
-            if movie_lower in post_lower:
-                return 1.0
-            
-            # Word matching
-            movie_words = set(movie_lower.split())
-            post_words = set(post_lower.split())
-            
-            # Remove common words
-            common_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'}
-            movie_words -= common_words
-            post_words -= common_words
-            
-            if not movie_words:
-                return 0.0
-            
-            # Calculate word overlap
-            overlap = len(movie_words.intersection(post_words))
-            relevance = overlap / len(movie_words)
-            
-            # Boost for review/discussion keywords
-            review_keywords = ['review', 'thoughts', 'opinion', 'discussion', 'watched', 'movie']
-            if any(keyword in post_lower for keyword in review_keywords):
-                relevance += 0.2
-            
-            return min(relevance, 1.0)
-            
-        except Exception as e:
-            logger.warning(f"⚠️ Relevance calculation error: {e}")
-            return 0.0
-    
-    def _get_sample_reviews(self, movie_title: str, year: str = None) -> List[Dict[str, Any]]:
-        """Get sample reviews for popular movies when Reddit API fails"""
-        sample_reviews = {
-            'the matrix': [
-                {
-                    'title': 'The Matrix (1999) - Mind-bending masterpiece that changed sci-fi forever',
-                    'author': 'MovieFan2024',
-                    'score': 2847,
-                    'num_comments': 156,
-                    'selftext': 'Just watched The Matrix again and it still holds up incredibly well. The philosophy, action, and visual effects were groundbreaking...',
-                    'subreddit': 'movies',
-                    'source': 'sample_review',
-                    'relevance_score': 1.0,
-                    'upvote_ratio': 0.96,
-                    'is_discussion': True,
-                    'is_review': True,
-                    'created_date': '2024-01-15',
-                    'url': 'https://reddit.com/r/movies/sample'
-                },
-                {
-                    'title': 'The Matrix trilogy discussion - Which one is your favorite?',
-                    'author': 'SciFiLover',
-                    'score': 1523,
-                    'num_comments': 89,
-                    'selftext': 'The original Matrix is a perfect film. The sequels have their moments but the first one is untouchable...',
-                    'subreddit': 'TrueFilm',
-                    'source': 'sample_review',
-                    'relevance_score': 0.9,
-                    'upvote_ratio': 0.92,
-                    'is_discussion': True,
-                    'is_review': False,
-                    'created_date': '2024-01-10',
-                    'url': 'https://reddit.com/r/TrueFilm/sample'
-                }
-            ],
-            'inception': [
-                {
-                    'title': 'Inception (2010) - Nolan\'s most complex and rewarding film',
-                    'author': 'DreamAnalyst',
-                    'score': 3241,
-                    'num_comments': 203,
-                    'selftext': 'After multiple viewings, Inception reveals new layers each time. The ending still sparks debate...',
-                    'subreddit': 'movies',
-                    'source': 'sample_review',
-                    'relevance_score': 1.0,
-                    'upvote_ratio': 0.94,
-                    'is_discussion': True,
-                    'is_review': True,
-                    'created_date': '2024-01-20',
-                    'url': 'https://reddit.com/r/movies/sample'
-                }
-            ],
-            'interstellar': [
-                {
-                    'title': 'Interstellar (2014) - Emotional journey through space and time',
-                    'author': 'CosmicCinema',
-                    'score': 2956,
-                    'num_comments': 178,
-                    'selftext': 'Interstellar combines hard science with deep emotion. The docking scene and the ending still give me chills...',
-                    'subreddit': 'movies',
-                    'source': 'sample_review',
-                    'relevance_score': 1.0,
-                    'upvote_ratio': 0.93,
-                    'is_discussion': True,
-                    'is_review': True,
-                    'created_date': '2024-01-18',
-                    'url': 'https://reddit.com/r/movies/sample'
-                }
-            ]
-        }
-        
-        return sample_reviews.get(movie_title.lower(), [])
     
     async def get_trending_movie_discussions(self, limit: int = 20) -> List[Dict[str, Any]]:
         """Get trending movie discussions from Reddit"""

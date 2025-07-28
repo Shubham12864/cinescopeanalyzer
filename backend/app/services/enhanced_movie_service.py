@@ -147,109 +147,65 @@ class EnhancedMovieService:
             
             for movie in enhanced_results:
                 try:
-                    # Get Reddit reviews for each movie (with timeout)
+                    # CRITICAL: Fix float conversion errors
                     movie_title = movie.get('title', '')
                     movie_year = movie.get('year', '')
                     
+                    # Safe rating conversion
+                    rating_value = movie.get('rating') or movie.get('imdbRating') or 0
+                    if isinstance(rating_value, str):
+                        if rating_value.lower() in ['n/a', 'null', 'none', '']:
+                            movie['rating'] = 0.0
+                        else:
+                            try:
+                                movie['rating'] = float(rating_value)
+                            except (ValueError, TypeError):
+                                movie['rating'] = 0.0
+                    else:
+                        movie['rating'] = float(rating_value) if rating_value else 0.0
+                    
+                    # Safe year conversion
+                    year_value = movie.get('year')
+                    if isinstance(year_value, str):
+                        if year_value.lower() in ['n/a', 'null', 'none', '']:
+                            movie['year'] = 2023
+                        else:
+                            try:
+                                movie['year'] = int(year_value.split('-')[0]) if '-' in year_value else int(year_value)
+                            except (ValueError, TypeError):
+                                movie['year'] = 2023
+                    else:
+                        movie['year'] = int(year_value) if year_value else 2023
+                    
+                    # Add Reddit reviews with timeout protection
                     if movie_title:
-                        # Use asyncio.wait_for to timeout Reddit calls quickly
                         try:
                             reddit_reviews = await asyncio.wait_for(
-                                self.review_service.get_movie_reviews(movie_title, movie_year, limit=3),
-                                timeout=5.0  # Only wait 5 seconds for Reddit
+                                self.review_service.get_movie_reviews(movie_title, str(movie_year), limit=2),
+                                timeout=3.0  # Reduced from 5 to 3 seconds
                             )
-                        except asyncio.TimeoutError:
-                            logger.warning(f"⚠️ Reddit timeout for: {movie_title}")
-                            reddit_reviews = []
-                        except Exception as reddit_error:
-                            logger.warning(f"⚠️ Reddit error for {movie_title}: {reddit_error}")
+                        except (asyncio.TimeoutError, Exception) as e:
+                            logger.warning(f"⚠️ Reddit skipped for {movie_title}: {e}")
                             reddit_reviews = []
                         
-                        # Add Reddit data to movie
                         movie.update({
                             'reddit_reviews': reddit_reviews,
                             'review_count': len(reddit_reviews),
-                            'has_reddit_reviews': len(reddit_reviews) > 0,
-                            'top_reddit_score': max([r.get('score', 0) for r in reddit_reviews]) if reddit_reviews else 0,
-                            'review_subreddits': list(set([r.get('subreddit') for r in reddit_reviews])) if reddit_reviews else []
+                            'has_reddit_reviews': len(reddit_reviews) > 0
                         })
-                        
-                        logger.debug(f"📝 Added {len(reddit_reviews)} Reddit reviews for: {movie_title}")
-                    
-                    # Add complete pipeline metadata
-                    movie.update({
-                        'search_timestamp': datetime.now().isoformat(),
-                        'search_query': query,
-                        'webapp_ready': True,
-                        'complete_pipeline': True,
-                        'pipeline_steps': ['omdb_scrapy_search', 'fanart_images', 'reddit_reviews'],
-                        'enhanced_with_fanart': movie.get('poster_source') == 'fanart',
-                        'amazon_urls_removed': movie.get('amazon_url_replaced', False),
-                        'user_context': user_context or {}
-                    })
-                    
-                    # FRONTEND COMPATIBILITY: Add frontend-expected field names
-                    # Handle poster field mapping (check multiple possible field names)
-                    poster_field = None
-                    for field_name in ['poster_url', 'poster', 'Poster', 'fanart_poster']:
-                        if movie.get(field_name):
-                            poster_field = movie[field_name]
-                            break
-                    
-                    if poster_field:
-                        movie['poster'] = poster_field  # Frontend expects 'poster'
-                    elif movie.get('imdb_id'):
-                        # Fallback: Use a placeholder or default image
-                        movie['poster'] = f"https://via.placeholder.com/300x450?text={movie.get('title', 'Movie').replace(' ', '+')}"
-                    
-                    if movie.get('imdb_id'):
-                        movie['imdbId'] = movie['imdb_id']     # Frontend expects 'imdbId'
-                        movie['id'] = movie['imdb_id']         # Frontend expects 'id'
-                    if movie.get('imdbRating'):
-                        movie['rating'] = float(movie.get('imdbRating', 0))  # Frontend expects 'rating'
-                    elif movie.get('rating'):
-                        movie['rating'] = float(movie.get('rating', 0))  # Frontend expects 'rating'
-                    if movie.get('genre'):
-                        movie['genre'] = movie['genre'].split(', ') if isinstance(movie['genre'], str) else movie.get('genre', [])
                     
                     final_results.append(movie)
                     
                 except Exception as e:
-                    logger.warning(f"⚠️ Failed to add Reddit reviews for movie: {e}")
-                    # Still include movie without Reddit reviews
+                    logger.warning(f"⚠️ Movie processing error: {e}")
+                    # Still include movie with safe defaults
                     movie.update({
+                        'rating': 0.0,
+                        'year': 2023,
                         'reddit_reviews': [],
                         'review_count': 0,
-                        'has_reddit_reviews': False,
-                        'complete_pipeline': True,
-                        'pipeline_steps': ['omdb_scrapy_search', 'fanart_images'],
-                        'reddit_error': str(e)
+                        'has_reddit_reviews': False
                     })
-                    
-                    # FRONTEND COMPATIBILITY: Add frontend-expected field names
-                    # Handle poster field mapping (check multiple possible field names)
-                    poster_field = None
-                    for field_name in ['poster_url', 'poster', 'Poster', 'fanart_poster']:
-                        if movie.get(field_name):
-                            poster_field = movie[field_name]
-                            break
-                    
-                    if poster_field:
-                        movie['poster'] = poster_field  # Frontend expects 'poster'
-                    elif movie.get('imdb_id'):
-                        # Fallback: Use a placeholder or default image
-                        movie['poster'] = f"https://via.placeholder.com/300x450?text={movie.get('title', 'Movie').replace(' ', '+')}"
-                    
-                    if movie.get('imdb_id'):
-                        movie['imdbId'] = movie['imdb_id']     # Frontend expects 'imdbId'
-                        movie['id'] = movie['imdb_id']         # Frontend expects 'id'
-                    if movie.get('imdbRating'):
-                        movie['rating'] = float(movie.get('imdbRating', 0))  # Frontend expects 'rating'
-                    elif movie.get('rating'):
-                        movie['rating'] = float(movie.get('rating', 0))  # Frontend expects 'rating'
-                    if movie.get('genre'):
-                        movie['genre'] = movie['genre'].split(', ') if isinstance(movie['genre'], str) else movie.get('genre', [])
-                    
                     final_results.append(movie)
             
             logger.info(f"✅ STEP 3 COMPLETE: {len(final_results)} movies with Reddit reviews")
@@ -364,6 +320,57 @@ class EnhancedMovieService:
         except Exception as e:
             logger.error(f"❌ COMPLETE PIPELINE DETAILS FAILED: {e}")
             return None
+    
+    def _safe_convert_movie_data(self, movie_data: dict) -> dict:
+        """Safely convert movie data with proper error handling"""
+        safe_movie = {}
+        
+        # Safe string fields
+        safe_movie['title'] = str(movie_data.get('title', 'Unknown Movie'))
+        safe_movie['plot'] = str(movie_data.get('plot', 'No plot available'))
+        safe_movie['director'] = str(movie_data.get('director', 'Unknown Director'))
+        
+        # Safe numeric fields
+        try:
+            rating = movie_data.get('rating') or movie_data.get('imdbRating') or 0
+            if isinstance(rating, str) and rating.lower() in ['n/a', 'null', 'none', '']:
+                safe_movie['rating'] = 0.0
+            else:
+                safe_movie['rating'] = float(rating)
+        except (ValueError, TypeError):
+            safe_movie['rating'] = 0.0
+        
+        try:
+            year = movie_data.get('year') or 2023
+            if isinstance(year, str):
+                if year.lower() in ['n/a', 'null', 'none', '']:
+                    safe_movie['year'] = 2023
+                else:
+                    safe_movie['year'] = int(year.split('-')[0]) if '-' in year else int(year)
+            else:
+                safe_movie['year'] = int(year)
+        except (ValueError, TypeError):
+            safe_movie['year'] = 2023
+        
+        # Safe list fields
+        genre = movie_data.get('genre', [])
+        if isinstance(genre, str):
+            safe_movie['genre'] = [g.strip() for g in genre.split(',') if g.strip()]
+        else:
+            safe_movie['genre'] = list(genre) if genre else []
+        
+        # Safe poster field
+        poster = movie_data.get('poster', '')
+        if poster and poster.lower() not in ['n/a', 'null', 'none']:
+            safe_movie['poster'] = str(poster)
+        else:
+            safe_movie['poster'] = f"https://via.placeholder.com/300x450/333333/ffffff?text={safe_movie['title'].replace(' ', '+')}"
+        
+        # IDs
+        safe_movie['id'] = str(movie_data.get('id', movie_data.get('imdbId', f"movie_{hash(safe_movie['title'])}")))
+        safe_movie['imdbId'] = str(movie_data.get('imdbId', safe_movie['id']))
+        
+        return safe_movie
 
 # Global service instance
 enhanced_movie_service = EnhancedMovieService()
