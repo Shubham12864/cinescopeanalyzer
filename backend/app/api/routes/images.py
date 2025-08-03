@@ -9,7 +9,7 @@ import os
 import re
 import logging
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from urllib.parse import urlparse
 from PIL import Image, ImageDraw, ImageFont
 import io
@@ -17,6 +17,7 @@ import hashlib
 from datetime import datetime, timedelta
 
 from ...services.image_processing_service import image_processing_service, fallback_image_generator
+from ...services.enhanced_image_cache_service import enhanced_image_cache
 from ...core.error_handler import (
     error_handler,
     ErrorSeverity,
@@ -161,25 +162,21 @@ def validate_and_sanitize_url(url: str, request_id: Optional[str] = None) -> str
 
 
 
-async def try_proxy_with_retry(url: str, max_retries: int = 2, request_id: Optional[str] = None) -> Response:
-    """Try to proxy image with retry mechanism, caching, and different headers"""
+async def try_proxy_with_retry(url: str, max_retries: int = 2, request_id: Optional[str] = None, size: Optional[str] = None) -> Response:
+    """Try to proxy image with retry mechanism, enhanced caching, and different headers"""
     
-    # Check cache first
-    cached_data = _get_cached_image(url)
+    # Check enhanced cache first
+    cached_data = await enhanced_image_cache.get_cached_image(url, size)
     if cached_data:
-        cache_key = _generate_cache_key(url)
-        cached_entry = _image_cache[cache_key]
-        content_type = cached_entry.get('content_type', 'image/jpeg')
-        
         return Response(
             content=cached_data,
-            media_type=content_type,
+            media_type="image/jpeg",  # Default to JPEG
             headers={
                 'Cache-Control': 'public, max-age=86400, s-maxage=86400',  # 24 hours for cached images
                 'Access-Control-Allow-Origin': '*',
                 'Access-Control-Allow-Methods': 'GET',
                 'Access-Control-Allow-Headers': 'Content-Type',
-                'X-Cache': 'HIT',
+                'X-Cache': 'HIT-ENHANCED',
                 'Vary': 'Accept-Encoding',
                 'ETag': f'"{_generate_cache_key(url)}"'
             }
@@ -234,8 +231,8 @@ async def try_proxy_with_retry(url: str, max_retries: int = 2, request_id: Optio
                     
                     logger.debug(f"✅ Successfully proxied image on attempt {attempt + 1}: {url}")
                     
-                    # Cache the successful response
-                    _cache_image(url, response.content, content_type)
+                    # Cache using enhanced cache service
+                    await enhanced_image_cache.cache_image(url, response.content, content_type, size)
                     
                     return Response(
                         content=response.content,
@@ -245,7 +242,7 @@ async def try_proxy_with_retry(url: str, max_retries: int = 2, request_id: Optio
                             'Access-Control-Allow-Origin': '*',
                             'Access-Control-Allow-Methods': 'GET',
                             'Access-Control-Allow-Headers': 'Content-Type',
-                            'X-Cache': 'MISS',
+                            'X-Cache': 'MISS-ENHANCED',
                             'Vary': 'Accept-Encoding',
                             'ETag': f'"{hashlib.md5(response.content).hexdigest()}"'
                         }
@@ -278,7 +275,7 @@ async def try_proxy_with_retry(url: str, max_retries: int = 2, request_id: Optio
     
     raise ImageProcessingException(url, f"Could not load image after {max_retries + 1} attempts: {last_error}")
 
-async def _proxy_image_internal(url: str, request_id: Optional[str] = None) -> Response:
+async def _proxy_image_internal(url: str, request_id: Optional[str] = None, size: Optional[str] = None) -> Response:
     """Internal function to proxy images without FastAPI dependencies"""
     try:
         # Clean up expired cache entries periodically
@@ -287,11 +284,29 @@ async def _proxy_image_internal(url: str, request_id: Optional[str] = None) -> R
         # Validate and sanitize URL
         clean_url = validate_and_sanitize_url(url, request_id)
         
+        # Handle image size transformation
+        if size and size in ["w200", "w500", "w780", "original"]:
+            # If it's a TMDB URL, replace the size component
+            if "image.tmdb.org" in clean_url:
+                import re
+                # Replace existing size with requested size
+                clean_url = re.sub(r'/w\d+/', f'/{size}/', clean_url)
+                clean_url = re.sub(r'/original/', f'/{size}/', clean_url)
+        
         # Try to proxy the image with retries and caching
         try:
-            return await try_proxy_with_retry(clean_url, request_id=request_id)
+            return await try_proxy_with_retry(clean_url, request_id=request_id, size=size)
             
         except ImageProcessingException:
+            # Try fallback image sources
+            fallback_urls = await _get_fallback_image_sources(url, size)
+            
+            for fallback_url in fallback_urls:
+                try:
+                    return await try_proxy_with_retry(fallback_url, request_id=request_id, size=size)
+                except ImageProcessingException:
+                    continue
+            
             # Generate fallback image using the new service
             logger.info(f"🎨 Generating fallback image for failed URL: {url} (request_id: {request_id})")
             
@@ -353,15 +368,133 @@ async def _proxy_image_internal(url: str, request_id: Optional[str] = None) -> R
         except:
             raise ImageProcessingException(url, "Unable to generate fallback image")
 
+async def _get_fallback_image_sources(original_url: str, size: Optional[str] = None) -> List[str]:
+    """Get fallback image sources (OMDB, Fanart.tv, etc.)"""
+    fallback_urls = []
+    
+    try:
+        # Extract movie ID or title from the original URL if possible
+        movie_id = None
+        movie_title = None
+        
+        # Try to extract IMDB ID or movie info from URL
+        if 'imdb' in original_url.lower():
+            import re
+            imdb_match = re.search(r'tt\d+', original_url)
+            if imdb_match:
+                movie_id = imdb_match.group()
+        
+        # Try Fanart.tv API if we have a movie ID
+        if movie_id:
+            try:
+                from ...services.fanart_api_service import FanArtAPIService
+                fanart_service = FanArtAPIService()
+                await fanart_service.initialize()
+                fanart_url = await fanart_service.get_movie_poster(movie_id)
+                if fanart_url:
+                    fallback_urls.append(fanart_url)
+            except Exception as e:
+                logger.debug(f"Fanart.tv fallback failed: {e}")
+        
+        # Try alternative TMDB sizes if it's a TMDB URL
+        if "image.tmdb.org" in original_url:
+            base_url = original_url.split('/t/p/')[0] + '/t/p'
+            image_path = original_url.split('/t/p/')[1]
+            if '/' in image_path:
+                image_path = '/' + '/'.join(image_path.split('/')[1:])
+            
+            alternative_sizes = ["w500", "w780", "w200", "original"]
+            for alt_size in alternative_sizes:
+                if alt_size != size:  # Don't try the same size again
+                    fallback_urls.append(f"{base_url}/{alt_size}{image_path}")
+    
+    except Exception as e:
+        logger.debug(f"Error generating fallback URLs: {e}")
+    
+    return fallback_urls
+
 @router.get("/proxy")
 @router.get("/image-proxy")  # Add compatibility route for frontend
 async def proxy_image(
     request: Request,
-    url: str = Query(..., description="Image URL to proxy")
+    url: str = Query(..., description="Image URL to proxy"),
+    size: Optional[str] = Query(None, description="Image size (w200, w500, w780, original)")
 ):
     """Enhanced proxy for external images with retry mechanism, caching, and fallback generation"""
     request_id = get_request_id(request)
-    return await _proxy_image_internal(url, request_id)
+    return await _proxy_image_internal(url, request_id, size)
+
+@router.get("/proxy/{image_path:path}")
+async def proxy_image_by_path(
+    request: Request,
+    image_path: str,
+    size: Optional[str] = Query("w500", description="Image size (w200, w500, w780, original)")
+):
+    """Enhanced proxy for TMDB-style image paths with automatic size handling"""
+    request_id = get_request_id(request)
+    
+    # Construct full TMDB URL if it's a path-only URL
+    if not image_path.startswith('http'):
+        base_url = "https://image.tmdb.org/t/p"
+        if size and size in ["w200", "w500", "w780", "original"]:
+            full_url = f"{base_url}/{size}{image_path}"
+        else:
+            full_url = f"{base_url}/w500{image_path}"
+    else:
+        full_url = image_path
+    
+    return await _proxy_image_internal(full_url, request_id, size)
+
+@router.get("/cache/stats")
+async def get_cache_stats(request: Request):
+    """Get cache statistics"""
+    request_id = get_request_id(request)
+    
+    try:
+        stats = await enhanced_image_cache.get_cache_stats()
+        return {
+            "status": "success",
+            "cache_stats": stats,
+            "request_id": request_id
+        }
+    except Exception as e:
+        logger.error(f"Error getting cache stats: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get cache statistics")
+
+@router.post("/cache/warm")
+async def warm_cache(request: Request, movie_urls: List[Dict[str, str]]):
+    """Warm cache for popular movies"""
+    request_id = get_request_id(request)
+    
+    try:
+        # Start cache warming in background
+        asyncio.create_task(enhanced_image_cache.warm_cache_for_popular_movies(movie_urls))
+        
+        return {
+            "status": "success",
+            "message": f"Cache warming started for {len(movie_urls)} movies",
+            "request_id": request_id
+        }
+    except Exception as e:
+        logger.error(f"Error starting cache warming: {e}")
+        raise HTTPException(status_code=500, detail="Failed to start cache warming")
+
+@router.post("/cache/cleanup")
+async def cleanup_cache(request: Request):
+    """Cleanup expired cache entries"""
+    request_id = get_request_id(request)
+    
+    try:
+        await enhanced_image_cache.cleanup_expired_cache()
+        
+        return {
+            "status": "success",
+            "message": "Cache cleanup completed",
+            "request_id": request_id
+        }
+    except Exception as e:
+        logger.error(f"Error during cache cleanup: {e}")
+        raise HTTPException(status_code=500, detail="Failed to cleanup cache")
 
 @router.get("/cached/{filename}")
 async def get_cached_image(request: Request, filename: str):

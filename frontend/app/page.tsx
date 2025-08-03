@@ -4,17 +4,31 @@ import { motion } from "framer-motion"
 import { Navigation } from "@/components/navigation/navigation"
 import { Hero } from "@/components/hero/hero"
 import { MovieGrid } from "@/components/movie-cards/movie-grid"
-import { MovieSuggestions } from "@/components/suggestions/movie-suggestions"
-import { PopularMoviesSection } from "@/components/sections/popular-movies-section"
-import { TopRatedMoviesSection } from "@/components/sections/top-rated-movies-section"
-import { RecentMoviesSection } from "@/components/sections/recent-movies-section"
+import { DynamicMovieSections } from "@/components/sections/DynamicMovieSections"
 import { useMovieContext } from "@/contexts/movie-context"
+import { useRouter } from "next/navigation"
 
 export default function HomePage() {
   const { searchQuery, movies } = useMovieContext()
+  const router = useRouter()
   
   // Show search results immediately when user searches
   const hasSearchResults = searchQuery && searchQuery.trim().length > 0
+
+  const handleMoviePlay = (movie: any) => {
+    // Navigate to movie details page or open player
+    router.push(`/movies/${movie.id}`)
+  }
+
+  const handleMovieInfo = (movie: any) => {
+    // Navigate to movie details page
+    router.push(`/movies/${movie.id}`)
+  }
+
+  const handleViewAll = (section: string) => {
+    // Navigate to category page
+    router.push(`/movies/category/${section}`)
+  }
 
   return (
     <div className="flex min-h-screen bg-black">
@@ -49,22 +63,16 @@ export default function HomePage() {
               <MovieGrid />
             </div>
           ) : (
-            /* Default Home Sections - Only show when NOT searching */
-            <div className="container mx-auto px-4 py-8 space-y-12">
-              {/* Movie Suggestions - Dynamic suggestions that change every minute */}
-              <MovieSuggestions />
-
-              {/* Popular Movies - Most popular movies */}
-              <PopularMoviesSection />
-
-              {/* Top Rated Movies - Highest rated movies */}
-              <TopRatedMoviesSection />
-
-              {/* Recent Movies - Latest movies */}
-              <RecentMoviesSection />
+            /* Enhanced Dynamic Movie Sections - Only show when NOT searching */
+            <div className="container mx-auto px-4 py-8">
+              <DynamicMovieSections
+                onMoviePlay={handleMoviePlay}
+                onMovieInfo={handleMovieInfo}
+                onViewAll={handleViewAll}
+              />
               
               {/* All Movies Grid - General movie browsing */}
-              <div className="mt-12">
+              <div className="mt-16">
                 <h2 className="text-2xl font-bold text-white mb-6">Browse All Movies</h2>
                 <MovieGrid />
               </div>

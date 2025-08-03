@@ -15,6 +15,7 @@ from ...models.movie import Movie, Review, AnalyticsData, SentimentData, RatingD
 from ...services.movie_service import MovieService
 from ...services.comprehensive_movie_service_working import ComprehensiveMovieService
 from ...services.image_cache_service import ImageCacheService
+from ...services.enhanced_image_cache_service import enhanced_image_cache
 from ...core.service_manager import service_manager
 from ...core.error_handler import (
     error_handler, 
@@ -744,28 +745,35 @@ async def get_recent_movies(limit: int = Query(12, ge=1, le=20)):
 
 @router.get("/popular", response_model=List[Movie]) 
 async def get_popular_movies(
+    request: Request,
     limit: int = Query(20, ge=1, le=50)
 ):
-    """Get popular movies from real TMDB/OMDB APIs"""
+    """Get popular movies from real TMDB/OMDB APIs with enhanced image processing"""
+    request_id = get_request_id(request)
+    
     try:
-        logger.info(f"⭐ Getting {limit} popular movies from APIs")
+        logger.info(f"⭐ Getting {limit} popular movies from APIs (request_id: {request_id})")
         
-        # REMOVED: All hardcoded popular_movies_pool
-        
-        # Use TMDB API for real popular movies
+        # Try TMDB API first for real popular movies
         try:
             if hasattr(movie_service.api_manager, 'tmdb_api'):
                 popular_data = await movie_service.api_manager.tmdb_api.get_popular_movies(limit)
                 if popular_data:
                     movie_objects = [_convert_dict_to_movie(movie) for movie in popular_data]
                     processed_movies = await process_movie_images(movie_objects, use_dynamic_loading=True)
-                    logger.info(f"✅ TMDB Popular: {len(processed_movies)} movies")
+                    
+                    # Warm cache for popular movies
+                    cache_urls = [{"poster_url": movie.poster} for movie in processed_movies if movie.poster]
+                    if cache_urls:
+                        asyncio.create_task(enhanced_image_cache.warm_cache_for_popular_movies(cache_urls))
+                    
+                    logger.info(f"✅ TMDB Popular: {len(processed_movies)} movies (request_id: {request_id})")
                     return processed_movies
         except Exception as e:
             logger.warning(f"TMDB popular failed: {e}")
         
         # Fallback: Use enhanced search for popular terms
-        popular_searches = ["oscar winner", "best picture", "blockbuster", "award winning"]
+        popular_searches = ["popular", "trending", "blockbuster", "award winning"]
         all_movies = []
         
         for search_term in popular_searches:
@@ -780,10 +788,21 @@ async def get_popular_movies(
         movie_objects = [_convert_dict_to_movie(movie) for movie in all_movies[:limit]]
         processed_movies = await process_movie_images(movie_objects, use_dynamic_loading=True)
         
-        logger.info(f"✅ Dynamic Popular: {len(processed_movies)} movies")
+        # Warm cache for popular movies
+        cache_urls = [{"poster_url": movie.poster} for movie in processed_movies if movie.poster]
+        if cache_urls:
+            asyncio.create_task(enhanced_image_cache.warm_cache_for_popular_movies(cache_urls))
+        
+        logger.info(f"✅ Dynamic Popular: {len(processed_movies)} movies (request_id: {request_id})")
         return processed_movies
         
     except Exception as e:
+        error_handler.log_error(
+            e,
+            severity=ErrorSeverity.MEDIUM,
+            context={"endpoint": "get_popular_movies", "limit": limit},
+            request_id=request_id
+        )
         logger.error(f"❌ Error getting popular movies: {e}")
         return []
 
