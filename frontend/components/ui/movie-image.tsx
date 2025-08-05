@@ -47,8 +47,8 @@ export function MovieImage({
       // Get API base URL from environment or default to localhost
       const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
       
-      // Use the correct movies image-proxy endpoint (not images/image-proxy)
-      return `${API_BASE_URL}/api/movies/image-proxy?url=${encodeURIComponent(cleanUrl)}`
+      // Use the correct images image-proxy endpoint (not movies/image-proxy)
+      return `${API_BASE_URL}/api/images/image-proxy?url=${encodeURIComponent(cleanUrl)}`
     } catch (error) {
       console.warn('Error generating proxy URL:', error)
       return imageUrl
@@ -61,7 +61,7 @@ export function MovieImage({
     // Get API base URL from environment or default to localhost
     const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
     // Use correct backend fallback generation endpoint
-    return `${API_BASE_URL}/api/movies/image-proxy?url=fallback&title=${encodedTitle}`
+    return `${API_BASE_URL}/api/images/image-proxy?url=fallback&title=${encodedTitle}`
   }
 
   const defaultFallback = fallbackSrc || generateFallback(alt || 'Movie')

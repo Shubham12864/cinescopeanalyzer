@@ -15,6 +15,7 @@ import logging
 from .api.routes.movies import router as movies_router
 from .api.routes.images import router as images_router
 from .api.routes.analytics import router as analytics_router
+from .api.routes.test_data import router as test_data_router
 # Temporarily disabled to avoid pandas/numpy compatibility issues
 # from .api.routes.enhanced_analysis_routes import router as enhanced_analysis_router
 
@@ -82,6 +83,7 @@ app.add_exception_handler(Exception, global_exception_handler)
 app.include_router(movies_router)
 app.include_router(images_router)
 app.include_router(analytics_router)
+app.include_router(test_data_router)
 # Temporarily disabled to avoid pandas/numpy compatibility issues
 # app.include_router(enhanced_analysis_router)
 

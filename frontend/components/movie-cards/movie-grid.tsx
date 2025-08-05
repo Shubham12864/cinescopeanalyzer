@@ -3,12 +3,15 @@
 import { motion } from "framer-motion"
 import { useMovieContext } from "@/contexts/movie-context"
 import { MovieRow } from "./movie-row"
+import { MovieRowSlider } from "@/components/ui/slider/movie-row-slider"
+import { HeroBannerSlider } from "@/components/ui/slider/hero-banner-slider"
 import { NetflixHeroBanner } from "./netflix-hero-banner"
 import { MovieCard } from "./movie-card"
 import { MovieCardSkeleton } from "./movie-card-skeleton"
 import { useState, useEffect } from "react"
 import { movieApi } from "@/lib/api"
 import type { Movie } from "@/types/movie"
+import type { SliderMovie } from "@/components/ui/slider/movie-slider"
 
 // Search history management
 const getSearchHistory = (): string[] => {
@@ -28,9 +31,21 @@ const addToSearchHistory = (query: string) => {
     const updatedHistory = [query, ...history.filter(h => h !== query)].slice(0, 10)
     localStorage.setItem('movie-search-history', JSON.stringify(updatedHistory))
   } catch {
-    // Silently fail if localStorage is not available
+    // Ignore localStorage errors
   }
 }
+
+// Transform Movie to SliderMovie for compatibility
+const transformToSliderMovie = (movie: Movie): SliderMovie => ({
+  ...movie,
+  overview: movie.plot,
+  poster_path: movie.poster,
+  fanart_url: movie.poster,
+  backdrop_path: movie.poster,
+  vote_average: movie.rating,
+  release_date: movie.year ? `${movie.year}-01-01` : undefined,
+  genres: movie.genre?.map((g, i) => ({ id: i, name: g })) || []
+})
 
 export function MovieGrid() {
   const { movies, isLoading, searchQuery, error, clearSearch, isDemoMode, isBackendConnected } = useMovieContext()
@@ -39,6 +54,8 @@ export function MovieGrid() {
   const [topRatedMovies, setTopRatedMovies] = useState<Movie[]>([])
   const [featuredMovie, setFeaturedMovie] = useState<any>(null)
   const [loadingSpecialData, setLoadingSpecialData] = useState(true)
+  const [useSliders, setUseSliders] = useState(true) // Enable slider system by default
+  const [heroSliderMovies, setHeroSliderMovies] = useState<SliderMovie[]>([]) // Movies for hero banner slider
 
   // Add current search to history when searching
   useEffect(() => {
@@ -101,6 +118,10 @@ export function MovieGrid() {
             year: featured.year || 2023,
             genre: featured.genre || ["Action", "Adventure"]
           })
+          
+          // Prepare hero slider movies (top 5 from trending/popular)
+          const heroMovies = featuredSource.slice(0, 5).map(transformToSliderMovie)
+          setHeroSliderMovies(heroMovies)
         }
         
       } catch (error) {
@@ -258,28 +279,127 @@ export function MovieGrid() {
             </div>
           </div>
         )}
-        <NetflixHeroBanner featuredMovie={featuredMovie} />
+        
+        {/* Slider Control Toggle */}
+        <div className="px-4 lg:px-8 mb-6">
+          <div className="max-w-screen-2xl mx-auto flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <h1 className="text-3xl font-bold text-white">CineScope</h1>
+              <div className="flex items-center gap-2 bg-gray-800 rounded-lg p-1">
+                <button
+                  onClick={() => setUseSliders(false)}
+                  className={`px-3 py-1 rounded text-sm transition-colors ${
+                    !useSliders 
+                      ? 'bg-red-600 text-white' 
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  Classic
+                </button>
+                <button
+                  onClick={() => setUseSliders(true)}
+                  className={`px-3 py-1 rounded text-sm transition-colors ${
+                    useSliders 
+                      ? 'bg-red-600 text-white' 
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  Slider
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        {/* Hero Banner - Use new slider if enabled and movies available */}
+        {useSliders && heroSliderMovies.length > 0 ? (
+          <HeroBannerSlider 
+            movies={heroSliderMovies}
+            autoplay={true}
+            autoplayDelay={8000}
+            onMovieClick={(movie) => {
+              // Handle movie click navigation
+              console.log('Hero movie clicked:', movie)
+            }}
+            onPlayClick={(movie) => {
+              // Handle play button click
+              console.log('Hero play clicked:', movie)
+            }}
+            onInfoClick={(movie) => {
+              // Handle info button click  
+              console.log('Hero info clicked:', movie)
+            }}
+          />
+        ) : (
+          <NetflixHeroBanner featuredMovie={featuredMovie} />
+        )}
+        
         <div className="space-y-8 mt-8">
-          <MovieRow 
-            title="🔥 Trending Now" 
-            movies={trendingMovies.length > 0 ? trendingMovies : movies.slice(0, 15)} 
-            isLoading={loadingSpecialData && trendingMovies.length === 0}
-          />
-          <MovieRow 
-            title="⭐ Popular Movies" 
-            movies={popularMovies.length > 0 ? popularMovies : movies.slice(10, 25)} 
-            isLoading={loadingSpecialData && popularMovies.length === 0}
-          />
-          <MovieRow 
-            title="🏆 Top Rated" 
-            movies={topRatedMovies.length > 0 ? topRatedMovies : movies.filter(m => m.rating && m.rating > 8.0).slice(0, 15)} 
-            isLoading={loadingSpecialData && topRatedMovies.length === 0}
-          />
-          <MovieRow 
-            title="💎 Suggested Movies" 
-            movies={movies.slice(2, 17)} 
-            isLoading={loadingSpecialData}
-          />
+          {useSliders ? (
+            <>
+              <MovieRowSlider 
+                title="🔥 Trending Now" 
+                subtitle="What everyone's watching"
+                movies={(trendingMovies.length > 0 ? trendingMovies : movies.slice(0, 15)).map(transformToSliderMovie)} 
+                isLoading={loadingSpecialData && trendingMovies.length === 0}
+                preset="movieRow"
+                showNavigation={true}
+                showScrollbar={true}
+                autoplay={false}
+              />
+              <MovieRowSlider 
+                title="⭐ Popular Movies" 
+                subtitle="Audience favorites"
+                movies={(popularMovies.length > 0 ? popularMovies : movies.slice(10, 25)).map(transformToSliderMovie)} 
+                isLoading={loadingSpecialData && popularMovies.length === 0}
+                preset="popular"
+                showNavigation={true}
+                showPagination={false}
+                autoplay={false}
+              />
+              <MovieRowSlider 
+                title="🏆 Top Rated" 
+                subtitle="Critics' choice"
+                movies={(topRatedMovies.length > 0 ? topRatedMovies : movies.filter(m => m.rating && m.rating > 8.0).slice(0, 15)).map(transformToSliderMovie)} 
+                isLoading={loadingSpecialData && topRatedMovies.length === 0}
+                preset="topRated"
+                showNavigation={true}
+                autoplay={false}
+              />
+              <MovieRowSlider 
+                title="💎 Suggested Movies" 
+                subtitle="Curated for you"
+                movies={movies.slice(2, 17).map(transformToSliderMovie)} 
+                isLoading={loadingSpecialData}
+                preset="related"
+                showNavigation={true}
+                autoplay={false}
+              />
+            </>
+          ) : (
+            <>
+              <MovieRow 
+                title="🔥 Trending Now" 
+                movies={trendingMovies.length > 0 ? trendingMovies : movies.slice(0, 15)} 
+                isLoading={loadingSpecialData && trendingMovies.length === 0}
+              />
+              <MovieRow 
+                title="⭐ Popular Movies" 
+                movies={popularMovies.length > 0 ? popularMovies : movies.slice(10, 25)} 
+                isLoading={loadingSpecialData && popularMovies.length === 0}
+              />
+              <MovieRow 
+                title="🏆 Top Rated" 
+                movies={topRatedMovies.length > 0 ? topRatedMovies : movies.filter(m => m.rating && m.rating > 8.0).slice(0, 15)} 
+                isLoading={loadingSpecialData && topRatedMovies.length === 0}
+              />
+              <MovieRow 
+                title="💎 Suggested Movies" 
+                movies={movies.slice(2, 17)} 
+                isLoading={loadingSpecialData}
+              />
+            </>
+          )}
         </div>
       </motion.div>
     )

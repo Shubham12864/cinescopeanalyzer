@@ -125,9 +125,29 @@ export const movieApi = {
     const cached = clientCache.get<Movie[]>(cacheKey)
     if (cached) return cached
 
-    const result = await fetchApi<Movie[]>('/api/movies')
-    clientCache.set(cacheKey, result, 30 * 60 * 1000) // Cache for 30 minutes
-    return result
+    try {
+      // Try main movies endpoint first
+      const result = await fetchApi<Movie[]>('/api/movies')
+      
+      if (result && result.length > 0) {
+        clientCache.set(cacheKey, result, 30 * 60 * 1000) // Cache for 30 minutes
+        return result
+      } else {
+        console.log('⚠️ Main movies endpoint returned empty, trying test data...')
+        throw new Error('Empty result from main endpoint')
+      }
+    } catch (error) {
+      console.warn('⚠️ Main movies endpoint failed, using test data fallback')
+      try {
+        const testResult = await fetchApi<Movie[]>('/api/test/movies?limit=20')
+        console.log(`✅ Test movies data fallback successful: ${testResult.length} movies`)
+        clientCache.set(cacheKey, testResult, 30 * 60 * 1000) // Cache for 30 minutes
+        return testResult
+      } catch (fallbackError) {
+        console.error('❌ Both main and test movies endpoints failed:', fallbackError)
+        throw new ApiError('Failed to fetch movies from all sources')
+      }
+    }
   },
   async searchMovies(query: string, filters?: SearchFilters) {
     if (!query.trim()) return []
@@ -180,15 +200,33 @@ export const movieApi = {
 
     const params = limit ? `?limit=${limit}` : ''
     
-    // Use API queue for better concurrent request handling
-    const result = await queueApiCall(
-      () => fetchApi<Movie[]>(`/api/movies/popular${params}`),
-      `popular:${limit || 'all'}`,
-      5 // Medium-high priority
-    )
-    
-    clientCache.set(cacheKey, result, 30 * 60 * 1000) // Cache for 30 minutes
-    return result
+    try {
+      // Try main popular endpoint first
+      const result = await queueApiCall(
+        () => fetchApi<Movie[]>(`/api/movies/popular${params}`),
+        `popular:${limit || 'all'}`,
+        5 // Medium-high priority
+      )
+      
+      if (result && result.length > 0) {
+        clientCache.set(cacheKey, result, 30 * 60 * 1000) // Cache for 30 minutes
+        return result
+      } else {
+        console.log('⚠️ Main popular endpoint returned empty, trying test data...')
+        throw new Error('Empty result from main endpoint')
+      }
+    } catch (error) {
+      console.warn('⚠️ Main popular endpoint failed, using test data fallback')
+      try {
+        const testResult = await fetchApi<Movie[]>(`/api/test/movies/popular${params}`)
+        console.log(`✅ Test popular data fallback successful: ${testResult.length} movies`)
+        clientCache.set(cacheKey, testResult, 30 * 60 * 1000) // Cache for 30 minutes
+        return testResult
+      } catch (fallbackError) {
+        console.error('❌ Both main and test popular endpoints failed:', fallbackError)
+        throw new ApiError('Failed to fetch popular movies from all sources')
+      }
+    }
   },
   async getRecentMovies(limit?: number) {
     const cacheKey = `recent:${limit || 'all'}`
@@ -223,9 +261,30 @@ export const movieApi = {
     if (cached) return cached
 
     const params = limit ? `?limit=${limit}` : ''
-    const result = await fetchApi<Movie[]>(`/api/movies/suggestions${params}`)
-    clientCache.set(cacheKey, result, 30 * 60 * 1000) // Cache for 30 minutes
-    return result
+    
+    try {
+      // Try main suggestions endpoint first
+      const result = await fetchApi<Movie[]>(`/api/movies/suggestions${params}`)
+      
+      if (result && result.length > 0) {
+        clientCache.set(cacheKey, result, 30 * 60 * 1000) // Cache for 30 minutes
+        return result
+      } else {
+        console.log('⚠️ Main suggestions endpoint returned empty, trying test data...')
+        throw new Error('Empty result from main endpoint')
+      }
+    } catch (error) {
+      console.warn('⚠️ Main suggestions endpoint failed, using test data fallback')
+      try {
+        const testResult = await fetchApi<Movie[]>(`/api/test/movies${params || '?limit=10'}`)
+        console.log(`✅ Test suggestions data fallback successful: ${testResult.length} movies`)
+        clientCache.set(cacheKey, testResult, 30 * 60 * 1000) // Cache for 30 minutes
+        return testResult
+      } catch (fallbackError) {
+        console.error('❌ Both main and test suggestions endpoints failed:', fallbackError)
+        throw new ApiError('Failed to fetch suggestions from all sources')
+      }
+    }
   },
   async getTopRatedMovies(limit?: number) {
     const cacheKey = `top-rated:${limit || 'all'}`
