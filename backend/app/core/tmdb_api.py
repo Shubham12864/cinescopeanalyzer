@@ -173,7 +173,7 @@ class TMDBApi:
         return {
             "results": [
                 {
-                    "id": 278,
+                    "id": "278",
                     "title": "The Shawshank Redemption",
                     "vote_average": 9.3,
                     "release_date": "1994-09-23",
@@ -188,7 +188,7 @@ class TMDBApi:
         return {
             "results": [
                 {
-                    "id": 550,
+                    "id": "550",
                     "title": "Fight Club",
                     "vote_average": 8.8,
                     "release_date": "1999-10-15",

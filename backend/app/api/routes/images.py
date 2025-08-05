@@ -127,6 +127,13 @@ def validate_and_sanitize_url(url: str, request_id: Optional[str] = None) -> str
             "Image URL is required", "url", url
         )
     
+    
+    # Production fix for fallback URL handling
+    if url == "fallback" or url.lower() in ["fallback", "n/a", "null", "none"]:
+        raise error_handler.handle_validation_error(
+            "Invalid image URL: fallback or placeholder value not allowed", "url", url
+        )
+    
     if len(url) > 2000:
         raise error_handler.handle_validation_error(
             "Image URL too long (max 2000 characters)", "url", url
