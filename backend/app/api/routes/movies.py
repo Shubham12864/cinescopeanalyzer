@@ -92,8 +92,8 @@ def _convert_dict_to_movie(movie_data: dict) -> Movie:
             runtime_int = None
     
     return Movie(
-        id=movie_data.get('imdb_id') or movie_data.get('imdbId') or movie_data.get('id') or 'unknown',
-        imdbId=movie_data.get('imdb_id') or movie_data.get('imdbId') or movie_data.get('id'),
+        id=str(movie_data.get('imdb_id') or movie_data.get('imdbId') or movie_data.get('id') or 'unknown'),
+        imdbId=str(movie_data.get('imdb_id') or movie_data.get('imdbId') or movie_data.get('id') or 'unknown'),
         title=movie_data.get('title', 'Unknown Title'),
         poster=movie_data.get('poster') or movie_data.get('poster_url') or '',
         year=year_int,
@@ -755,9 +755,11 @@ async def get_popular_movies(
         # Use TMDB API for real popular movies
         try:
             if hasattr(movie_service.api_manager, 'tmdb_api'):
-                popular_data = await movie_service.api_manager.tmdb_api.get_popular_movies(limit)
-                if popular_data:
-                    movie_objects = [_convert_dict_to_movie(movie) for movie in popular_data]
+                popular_data = await movie_service.api_manager.tmdb_api.get_popular_movies()
+                if popular_data and 'results' in popular_data:
+                    # Limit the results after fetching
+                    limited_data = popular_data['results'][:limit]
+                    movie_objects = [_convert_dict_to_movie(movie) for movie in limited_data]
                     processed_movies = await process_movie_images(movie_objects, use_dynamic_loading=True)
                     logger.info(f"✅ TMDB Popular: {len(processed_movies)} movies")
                     return processed_movies

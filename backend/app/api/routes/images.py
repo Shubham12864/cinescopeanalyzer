@@ -354,7 +354,9 @@ async def _proxy_image_internal(url: str, request_id: Optional[str] = None) -> R
             raise ImageProcessingException(url, "Unable to generate fallback image")
 
 @router.get("/proxy")
+@router.head("/proxy")
 @router.get("/image-proxy")  # Add compatibility route for frontend
+@router.head("/image-proxy")  # Add HEAD support for frontend
 async def proxy_image(
     request: Request,
     url: str = Query(..., description="Image URL to proxy")
