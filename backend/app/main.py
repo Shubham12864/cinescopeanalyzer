@@ -15,6 +15,7 @@ import logging
 from .api.routes.movies import router as movies_router
 from .api.routes.images import router as images_router
 from .api.routes.analytics import router as analytics_router
+from .api.routes.enhanced_routes import router as enhanced_routes_router
 # Temporarily disabled to avoid pandas/numpy compatibility issues
 # from .api.routes.enhanced_analysis_routes import router as enhanced_analysis_router
 
@@ -82,15 +83,19 @@ app.add_exception_handler(Exception, global_exception_handler)
 app.include_router(movies_router)
 app.include_router(images_router)
 app.include_router(analytics_router)
+app.include_router(enhanced_routes_router, prefix="/api/v2")  # New enhanced routes with Azure caching
 # Temporarily disabled to avoid pandas/numpy compatibility issues
 # app.include_router(enhanced_analysis_router)
 
 @app.get("/")
 async def root():
     return {
-        "message": "CineScope Movie Analysis API - Enhanced Edition", 
+        "message": "CineScope Movie Analysis API - Enhanced Edition with Azure Caching", 
         "version": "2.0.0",
         "features": [
+            "Azure Cosmos DB Caching for High Performance",
+            "Enhanced Image Proxy with Optimization",
+            "Intelligent Movie Data Caching",
             "Comprehensive Reddit Analysis",
             "Multi-platform Web Scraping (IMDB, RT, Metacritic, Letterboxd)",
             "Advanced Sentiment Analysis",
@@ -99,6 +104,11 @@ async def root():
             "Parallel Processing for Faster Analysis"
         ],
         "endpoints": {
+            "enhanced_search": "/api/v2/movies/search",
+            "enhanced_details": "/api/v2/movies/{id}",
+            "enhanced_popular": "/api/v2/movies/popular",
+            "enhanced_image_proxy": "/api/v2/images/proxy",
+            "cache_stats": "/api/v2/cache/stats",
             "comprehensive_analysis": "/api/v1/movies/analyze/comprehensive",
             "quick_analysis": "/api/v1/movies/analyze/quick",
             "batch_analysis": "/api/v1/movies/analyze/batch",
@@ -112,9 +122,12 @@ async def health_check():
     """Enhanced health check endpoint"""
     return {
         "status": "healthy", 
-        "message": "CineScope Enhanced API is running",
+        "message": "CineScope Enhanced API with Azure Caching is running",
         "version": "2.0.0",
         "services": {
+            "azure_cosmos_cache": "ready",
+            "enhanced_image_service": "ready",
+            "tmdb_api": "ready",
             "reddit_analyzer": "ready",
             "web_scraper": "ready", 
             "sentiment_analyzer": "ready",
