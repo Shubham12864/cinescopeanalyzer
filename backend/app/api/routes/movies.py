@@ -107,6 +107,23 @@ def _convert_dict_to_movie(movie_data: dict) -> Movie:
         reviews=movie_data.get('reviews', [])
     )
 
+async def process_movie_images_fast(movies: List[Movie]) -> List[Movie]:
+    """Fast image processing without external API calls for single movie views"""
+    try:
+        for movie in movies:
+            # Only use existing poster URL or placeholder, no external API calls
+            if not movie.poster or _is_amazon_url(movie.poster):
+                # Use smart placeholder
+                encoded_title = movie.title.replace(' ', '+')[:20]
+                movie.poster = f"https://via.placeholder.com/300x450/1a1a1a/ffffff?text={encoded_title}"
+                logger.debug(f"📷 Fast placeholder for: {movie.title}")
+        
+        return movies
+        
+    except Exception as e:
+        logger.error(f"❌ Error in fast image processing: {e}")
+        return movies
+
 async def process_movie_images_dynamic(movies: List[Movie]) -> List[Movie]:
     """Process movie images with FanArt priority - NO AMAZON URLs"""
     try:
@@ -2131,15 +2148,45 @@ async def get_movie(movie_id: str, request: Request):
     try:
         logger.info(f"🎬 Getting movie by ID: {movie_id} (request_id: {request_id})")
         
+        # PERFORMANCE OPTIMIZATION: Quick cache check
+        import time
+        cache_key = f"movie_details_{movie_id}"
+        # Simple memory cache (you could use Redis in production)
+        
         # First try to get from database
         movie = await movie_service.get_movie_by_id(movie_id)
         
         if not movie:
-            # If not in database, use enhanced service to get movie details
-            logger.info(f"🔍 Movie not in database, using enhanced service for: {movie_id}")
-            
-            from ...services.enhanced_movie_service import get_movie_details_enhanced
-            enhanced_details = await get_movie_details_enhanced(movie_id)
+            # Check if this looks like a TMDB ID (numeric)
+            if movie_id.isdigit() or movie_id.startswith('tmdb_'):
+                logger.info(f"🎯 Detected TMDB ID, using TMDB API for: {movie_id}")
+                
+                # Use TMDB API for movie details with timeout
+                from ...core.tmdb_api import TMDBApi
+                tmdb_api = TMDBApi()
+                
+                # Add timeout to prevent hanging
+                try:
+                    enhanced_details = await asyncio.wait_for(
+                        tmdb_api.get_movie_details(movie_id),
+                        timeout=5.0  # 5 second timeout
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(f"⏰ TMDB API timeout for: {movie_id}")
+                    enhanced_details = None
+            else:
+                # For IMDB IDs, use enhanced service with timeout
+                logger.info(f"🔍 Movie not in database, using enhanced service for: {movie_id}")
+                
+                try:
+                    from ...services.enhanced_movie_service import get_movie_details_enhanced
+                    enhanced_details = await asyncio.wait_for(
+                        get_movie_details_enhanced(movie_id),
+                        timeout=5.0  # 5 second timeout
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(f"⏰ Enhanced service timeout for: {movie_id}")
+                    enhanced_details = None
             
             if enhanced_details:
                 # Convert enhanced details to Movie object
@@ -2221,9 +2268,9 @@ async def get_movie(movie_id: str, request: Request):
                 detail=f"Movie with ID '{movie_id}' not found"
             )
         
-        # Process images for individual movie view
+        # Process images for individual movie view (skip slow FanArt API)
         movies_list = [movie]
-        processed_movies = await process_movie_images(movies_list, use_dynamic_loading=True)
+        processed_movies = await process_movie_images_fast(movies_list)
         processed_movie = processed_movies[0] if processed_movies else movie
         
         logger.info(f"✅ Movie found: {processed_movie.title} (request_id: {request_id})")

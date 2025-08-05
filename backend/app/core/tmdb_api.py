@@ -110,6 +110,92 @@ class TMDBApi:
             self.logger.error(f"❌ TMDB trending API request failed: {e}")
             return self._get_demo_trending_data()
 
+    async def get_movie_details(self, movie_id: str) -> Optional[Dict[str, Any]]:
+        """Get detailed movie information by TMDB ID"""
+        try:
+            # Remove 'tmdb_' prefix if present
+            tmdb_id = movie_id.replace('tmdb_', '') if movie_id.startswith('tmdb_') else movie_id
+            
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                # Get movie details
+                response = await client.get(
+                    f"{self.base_url}/movie/{tmdb_id}",
+                    headers=self.headers,
+                    params={
+                        "api_key": self.api_key,
+                        "language": "en-US"
+                    }
+                )
+                
+                if response.status_code == 200:
+                    movie_data = response.json()
+                    
+                    # Format the movie data
+                    formatted_movie = self._format_detailed_tmdb_movie(movie_data)
+                    self.logger.info(f"✅ TMDB movie details retrieved for ID: {tmdb_id}")
+                    return formatted_movie
+                else:
+                    self.logger.warning(f"⚠️ TMDB movie details API returned status {response.status_code} for ID: {tmdb_id}")
+                    return None
+                    
+        except Exception as e:
+            self.logger.error(f"❌ TMDB movie details error for ID {movie_id}: {e}")
+            return None
+
+    def _format_detailed_tmdb_movie(self, tmdb_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert detailed TMDB movie data to our standard format"""
+        try:
+            # Extract year from release date
+            year = 2023
+            if tmdb_data.get('release_date'):
+                try:
+                    year = int(tmdb_data['release_date'][:4])
+                except (ValueError, TypeError):
+                    year = 2023
+            
+            # Extract poster URL
+            poster_url = ""
+            if tmdb_data.get('poster_path'):
+                poster_url = f"{self.image_base_url}{tmdb_data['poster_path']}"
+            
+            # Extract genres
+            genres = []
+            if tmdb_data.get('genres'):
+                genres = [genre['name'] for genre in tmdb_data['genres']]
+            if not genres:
+                genres = ["Unknown"]
+            
+            # Extract cast from credits (simplified)
+            cast = ["Cast info requires additional API call"]
+            
+            # Extract director from crew (simplified)
+            director = "Director info requires additional API call"
+            
+            # Get external IDs for IMDB (simplified)
+            imdb_id = f"tmdb_{tmdb_data.get('id', 'unknown')}"
+            
+            return {
+                "id": str(tmdb_data.get('id', 'unknown')),
+                "imdbId": imdb_id,
+                "title": tmdb_data.get('title', 'Unknown Title'),
+                "year": year,
+                "poster": poster_url,
+                "rating": float(tmdb_data.get('vote_average', 0)),
+                "plot": tmdb_data.get('overview', ''),
+                "genre": genres,
+                "director": director,
+                "cast": cast,
+                "runtime": tmdb_data.get('runtime'),
+                "awards": [],  # TMDB doesn't provide awards in this format
+                "reviews": [],
+                "tmdb_id": tmdb_data.get('id'),
+                "source": "tmdb_details"
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error formatting detailed TMDB movie data: {e}")
+            return None
+
     def _format_tmdb_movie(self, tmdb_data: Dict[str, Any]) -> Dict[str, Any]:
         """Convert TMDB movie data to our standard format"""
         try:
