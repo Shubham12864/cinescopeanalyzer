@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { ArrowLeft, Play, Star, Calendar, Tag, User } from 'lucide-react'
@@ -26,20 +26,7 @@ export default function MovieDetailPage() {
 
   const movieId = params.id as string
 
-  useEffect(() => {
-    if (id) {
-      // Load movie details immediately (fast)
-      loadMovie(id)
-      
-      // Load analytics in background after a short delay (slow)
-      const analyticsTimer = setTimeout(() => {
-        loadAnalytics(id)
-      }, 500) // Load analytics 500ms after movie details
-      
-      return () => clearTimeout(analyticsTimer)
-    }
-  }, [id])
-  const loadMovie = async (id: string) => {
+  const loadMovie = useCallback(async (id: string) => {
     try {
       console.log('🎬 MovieDetails: Loading movie with ID:', id)
       setLoadingMovie(true)
@@ -59,7 +46,7 @@ export default function MovieDetailPage() {
     } finally {
       setLoadingMovie(false)
     }
-  }
+  }, [])
   const loadAnalytics = async (id: string) => {
     try {
       setLoadingAnalytics(true)
@@ -132,6 +119,21 @@ export default function MovieDetailPage() {
   const handleBack = () => {
     router.push('/')
   }
+
+  // Load movie data on component mount
+  useEffect(() => {
+    if (movieId) {
+      // Load movie details immediately (fast)
+      loadMovie(movieId)
+      
+      // Load analytics in background after a short delay (slow)
+      const analyticsTimer = setTimeout(() => {
+        loadAnalytics(movieId)
+      }, 500) // Load analytics 500ms after movie details
+      
+      return () => clearTimeout(analyticsTimer)
+    }
+  }, [movieId, loadMovie])
 
   if (loadingMovie) {
     return (
