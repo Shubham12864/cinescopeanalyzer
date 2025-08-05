@@ -3,11 +3,6 @@
 import React from 'react'
 import { motion } from 'framer-motion'
 import { MovieSlider, SliderMovie } from '@/components/ui/slider/movie-slider'
-import { MovieCardSkeleton } from '../../movie-cards/movie-card-skeleton'lient'
-
-import React from 'react'
-import { motion } from 'framer-motion'
-import { MovieSlider, SliderMovie } from '@/components/ui/slider/movie-slider'
 import { MovieCardSkeleton } from '@/components/movie-cards/movie-card-skeleton'
 
 interface MovieRowSliderProps {
