@@ -4,7 +4,7 @@ import { queueApiCall, queuePriorityRequest } from './request-queue'
 
 // Robust API URL detection with fallbacks
 const getApiBaseUrl = () => {
-  // Check environment variable first
+  // Check environment variable first (for production)
   if (typeof window !== 'undefined') {
     // Client-side: check for runtime environment
     const envUrl = process.env.NEXT_PUBLIC_API_URL
@@ -12,6 +12,13 @@ const getApiBaseUrl = () => {
       console.log('🔗 Using API URL from environment:', envUrl)
       return envUrl
     }
+  }
+  
+  // Server-side environment variable check
+  const serverEnvUrl = process.env.NEXT_PUBLIC_API_URL
+  if (serverEnvUrl) {
+    console.log('🔗 Using server API URL from environment:', serverEnvUrl)
+    return serverEnvUrl
   }
   
   // Fallback URLs based on current environment
@@ -23,9 +30,9 @@ const getApiBaseUrl = () => {
     }
   }
   
-  // Default fallback
-  console.log('🔗 Using default API URL fallback')
-  return 'http://localhost:8000'
+  // Production fallback to Railway URL
+  console.log('🔗 Using Railway production API URL fallback')
+  return 'https://cinescopeanalyzer-production.up.railway.app'
 }
 
 const API_BASE_URL = getApiBaseUrl()

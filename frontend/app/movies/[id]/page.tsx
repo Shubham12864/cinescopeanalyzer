@@ -27,10 +27,18 @@ export default function MovieDetailPage() {
   const movieId = params.id as string
 
   useEffect(() => {
-    if (movieId) {
-      loadMovie(movieId)
+    if (id) {
+      // Load movie details immediately (fast)
+      loadMovie(id)
+      
+      // Load analytics in background after a short delay (slow)
+      const analyticsTimer = setTimeout(() => {
+        loadAnalytics(id)
+      }, 500) // Load analytics 500ms after movie details
+      
+      return () => clearTimeout(analyticsTimer)
     }
-  }, [movieId])
+  }, [id])
   const loadMovie = async (id: string) => {
     try {
       console.log('🎬 MovieDetails: Loading movie with ID:', id)
