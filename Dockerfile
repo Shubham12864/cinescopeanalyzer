@@ -1,35 +1,32 @@
-# Use Python 3.11 slim image
-FROM python:3.11-slim
+# Frontend Dockerfile
+FROM node:18-alpine AS deps
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
 
-# Set working directory
+FROM node:18-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM node:18-alpine AS runner
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+ENV NODE_ENV production
 
-# Copy requirements first (for better caching)
-COPY backend/requirements.txt .
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 
-# Copy backend application
-COPY backend/ .
+USER nextjs
 
-# Create non-root user
-RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
-USER appuser
+EXPOSE 3000
 
-# Expose port
-EXPOSE 8000
+ENV PORT 3000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
-
-# Start command
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["node", "server.js"]

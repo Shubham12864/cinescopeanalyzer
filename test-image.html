@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Image Test</title>
+</head>
+<body>
+    <h1>Testing Amazon Image URLs</h1>
+    
+    <h2>Test 1: Inception Poster</h2>
+    <img src="https://m.media-amazon.com/images/M/MV5BMjAxMzY3NjcxNF5BMl5BanBnXkFtZTcwNTI5OTM0Mw@@._V1_SX300.jpg" 
+         alt="Inception" 
+         style="width: 200px; height: auto; border: 1px solid red;"
+         onload="console.log('✅ Image loaded successfully')"
+         onerror="console.log('❌ Image failed to load')" />
+    
+    <h2>Test 2: Next.js Image</h2>
+    <div id="nextjs-test">Loading...</div>
+    
+    <script>
+        console.log('Image test page loaded');
+        
+        // Test with Next.js Image component style
+        setTimeout(() => {
+            const nextDiv = document.getElementById('nextjs-test');
+            const img = document.createElement('img');
+            img.src = 'https://m.media-amazon.com/images/M/MV5BMjAxMzY3NjcxNF5BMl5BanBnXkFtZTcwNTI5OTM0Mw@@._V1_SX300.jpg';
+            img.alt = 'Inception Next.js style';
+            img.style.width = '200px';
+            img.style.height = '300px';
+            img.style.objectFit = 'cover';
+            img.style.border = '1px solid blue';
+            img.onload = () => console.log('✅ Next.js style image loaded');
+            img.onerror = () => console.log('❌ Next.js style image failed');
+            nextDiv.appendChild(img);
+        }, 1000);
+    </script>
+</body>
+</html>

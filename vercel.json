@@ -1,8 +1,5 @@
 {
   "version": 2,
-  "buildCommand": "cd frontend && npm ci && npm run build",
-  "outputDirectory": "frontend/.next",
-  "installCommand": "cd frontend && npm ci",
   "framework": "nextjs",
   "routes": [
     {
@@ -17,10 +14,5 @@
   "env": {
     "NEXT_PUBLIC_API_URL": "https://cinescopeanalyzer-production.up.railway.app",
     "NODE_ENV": "production"
-  },
-  "functions": {
-    "frontend/app/**": {
-      "maxDuration": 30
-    }
   }
 }

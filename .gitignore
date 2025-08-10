@@ -1,150 +1,27 @@
-# Dependencies
-node_modules/
-*/node_modules/
-__pycache__/
-*.py[cod]
-*$py.class
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# Test and debug files
-*test*
-*debug*
-*temp*
-*tmp*
-*backup*
-*.bak
+# dependencies
+/node_modules
 
-# Environment variables - CRITICAL: These must be ignored
-.env
-.env.*
-!.env.example
-backend/.env
-backend/.env.*
-!backend/.env.example
-frontend/.env.local
-frontend/.env.*
-!frontend/.env.example
+# next.js
+/.next/
+/out/
 
-# Build outputs
-frontend/.next/
-frontend/out/
-frontend/build/
-backend/dist/
-backend/build/
+# production
+/build
 
-# Database files
-*.db
-*.sqlite
-*.sqlite3
-cache/
-logs/
-backend/cache/
-backend/logs/
-backend/movies_cache.db
-backend/search_cache.db
-backend/enhanced_cache.db
-
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Python specific
-*.pyc
-__pycache__/
-venv/
-env/
-.pytest_cache/
-
-# Node specific
+# debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+.pnpm-debug.log*
 
-# Next.js specific
-.next/
-out/
+# env files
+.env*
 
-# Production files
+# vercel
 .vercel
-.railway
 
-# Testing
-coverage/
-*.coverage
-.nyc_output
-
-# Temporary files
-*.tmp
-*.temp
-
-# Backup files
-*.bak
-*.backup
-
-# Log files
-*.log
-
-# Large documentation files that cause push issues
-COMPREHENSIVE_*.md
-IMPLEMENTATION_*.md
-PRODUCTION_*.md
-ALL_FIXES_*.md
-SYSTEM_*.md
-*_COMPLETE.md
-*_SUCCESS.md
-*_SUMMARY.md
-API_RESTORATION_*.md
-AZURE_*.md
-DEPLOYMENT_FIX_*.md
-ERROR_FIXES_*.md
-FRONTEND_*.md
-IMAGE_*.md
-OMDB_*.md
-PIPELINE_*.md
-PRIORITY_*.md
-ROBUST_*.md
-SCRAPY_*.md
-SEARCH_*.md
-SESSION_*.md
-TASK_*.md
-
-# API keys and sensitive data
-*secret*
-*key*
-*token*
-DEPLOYMENT_KEYS_*
-*_PRIVATE.md
-fix_azure_connection.py
-
-# Test files (causing size issues)
-test_*.py
-*test*.py
-*test*.js
-comprehensive_connection_test*.py
-direct_backend_test.py
-quick_*_test.py
-test_complete_*.py
-test_final_*.py
-debug_*.py
-deep_*.py
-verify_*.py
-check_*.py
-speed_*.py
-fix_*.py
-
-# Temporary scripts
-clean_*.ps1
-clean_*.sh
-security_audit.*
-fix_git_final.ps1
-
-# Vercel and deployment files
-.vercel/
-*vercel*
-.env.production
-.env.local.example
+# typescript
+*.tsbuildinfo
+next-env.d.ts
