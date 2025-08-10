@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import { queueImageLoad } from '@/lib/request-queue'
@@ -78,7 +78,7 @@ export function MovieImage({
   const [isInViewport, setIsInViewport] = useState(false)
   const imageRef = useRef<HTMLDivElement>(null)
 
-  const handleError = () => {
+  const handleError = useCallback(() => {
     console.warn('Image load error for:', imgSrc, 'Retry count:', retryCount)
     
     // Clear any existing retry timeout
@@ -108,6 +108,17 @@ export function MovieImage({
           ? `${src}&retry=${Date.now()}` 
           : `${src}?retry=${Date.now()}`
         setImgSrc(retryUrl)
+      }, 1000 * (retryCount + 1)) // Exponential backoff
+      
+      setRetryTimeout(timeout)
+      return
+    }
+    
+    // Final fallback: use generated fallback (maintains layout integrity)
+    console.log('All image sources failed, using generated fallback for:', alt)
+    setImgSrc(defaultFallback)
+    setLoadingState('error')
+  }, [imgSrc, retryCount, retryTimeout, fallbackAttempted, src, alt, maxRetries, defaultFallback]) // Add dependencies
       }, 1000 * (retryCount + 1)) // Exponential backoff
       
       setRetryTimeout(timeout)
@@ -150,11 +161,9 @@ export function MovieImage({
       observer.disconnect()
     }
   }, [priority]) // Add missing dependency
-    }
-  }, [priority])
 
   // Enhanced image loading with request queue and progressive enhancement
-  const loadImageWithQueue = async (imageUrl: string): Promise<void> => {
+  const loadImageWithQueue = useCallback(async (imageUrl: string): Promise<void> => {
     try {
       // Cancel any existing request
       if (abortControllerRef.current) {
@@ -184,7 +193,7 @@ export function MovieImage({
       console.warn('Queued image load failed:', error)
       handleError()
     }
-  }
+  }, [priority, loadingPriority, handleError]) // Add dependencies
 
   // Cleanup timeout and abort controller on unmount
   useEffect(() => {
