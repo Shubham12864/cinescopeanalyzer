@@ -13,13 +13,16 @@ __pycache__/
 *backup*
 *.bak
 
-# Environment variables
+# Environment variables - CRITICAL: These must be ignored
 .env
-.env.local
-.env.production
-.env.test
+.env.*
+!.env.example
 backend/.env
+backend/.env.*
+!backend/.env.example
 frontend/.env.local
+frontend/.env.*
+!frontend/.env.example
 
 # Build outputs
 frontend/.next/
@@ -36,6 +39,9 @@ cache/
 logs/
 backend/cache/
 backend/logs/
+backend/movies_cache.db
+backend/search_cache.db
+backend/enhanced_cache.db
 
 # IDE files
 .vscode/
@@ -82,3 +88,56 @@ coverage/
 
 # Log files
 *.log
+
+# Large documentation files that cause push issues
+COMPREHENSIVE_*.md
+IMPLEMENTATION_*.md
+PRODUCTION_*.md
+ALL_FIXES_*.md
+SYSTEM_*.md
+*_COMPLETE.md
+*_SUCCESS.md
+*_SUMMARY.md
+API_RESTORATION_*.md
+AZURE_*.md
+DEPLOYMENT_FIX_*.md
+ERROR_FIXES_*.md
+FRONTEND_*.md
+IMAGE_*.md
+OMDB_*.md
+PIPELINE_*.md
+PRIORITY_*.md
+ROBUST_*.md
+SCRAPY_*.md
+SEARCH_*.md
+SESSION_*.md
+TASK_*.md
+
+# API keys and sensitive data
+*secret*
+*key*
+*token*
+DEPLOYMENT_KEYS_*
+*_PRIVATE.md
+fix_azure_connection.py
+
+# Test files (causing size issues)
+test_*.py
+*test*.py
+*test*.js
+comprehensive_connection_test*.py
+direct_backend_test.py
+quick_*_test.py
+test_complete_*.py
+test_final_*.py
+debug_*.py
+deep_*.py
+verify_*.py
+check_*.py
+speed_*.py
+fix_*.py
+
+# Temporary scripts
+clean_*.ps1
+clean_*.sh
+security_audit.*
