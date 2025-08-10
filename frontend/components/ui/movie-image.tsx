@@ -149,6 +149,8 @@ export function MovieImage({
     return () => {
       observer.disconnect()
     }
+  }, [priority]) // Add missing dependency
+    }
   }, [priority])
 
   // Enhanced image loading with request queue and progressive enhancement
@@ -236,6 +238,7 @@ export function MovieImage({
         loadImageWithQueue(processedSrc)
       }, 150) // Brief skeleton display for smooth UX
     }
+  }, [src, isInViewport, priority, retryTimeout, defaultFallback, generateProxyUrl, loadImageWithQueue]) // Add missing dependencies
   }, [src, defaultFallback, alt, retryTimeout, isInViewport, priority, loadingPriority])
 
   return (

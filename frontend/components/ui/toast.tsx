@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X, CheckCircle, AlertCircle, Info, AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -28,6 +28,11 @@ const Toast: React.FC<ToastProps> = ({ toast, onRemove }) => {
 
   const duration = toast.duration || 5000
 
+  const handleRemove = useCallback(() => {
+    setIsVisible(false)
+    setTimeout(() => onRemove(toast.id), 300)
+  }, [onRemove, toast.id])
+
   useEffect(() => {
     if (duration > 0) {
       const progressInterval = setInterval(() => {
@@ -44,12 +49,7 @@ const Toast: React.FC<ToastProps> = ({ toast, onRemove }) => {
 
       return () => clearInterval(progressInterval)
     }
-  }, [duration])
-
-  const handleRemove = () => {
-    setIsVisible(false)
-    setTimeout(() => onRemove(toast.id), 300)
-  }
+  }, [duration, handleRemove]) // Add missing handleRemove dependency
 
   const getToastConfig = (type: ToastData['type']) => {
     switch (type) {
