@@ -118,18 +118,7 @@ export function MovieImage({
     console.log('All image sources failed, using generated fallback for:', alt)
     setImgSrc(defaultFallback)
     setLoadingState('error')
-  }, [imgSrc, retryCount, retryTimeout, fallbackAttempted, src, alt, maxRetries, defaultFallback]) // Add dependencies
-      }, 1000 * (retryCount + 1)) // Exponential backoff
-      
-      setRetryTimeout(timeout)
-      return
-    }
-    
-    // Final fallback: use generated fallback (maintains layout integrity)
-    console.log('All image sources failed, using generated fallback for:', alt)
-    setImgSrc(defaultFallback)
-    setLoadingState('error')
-  }
+  }, [imgSrc, retryCount, retryTimeout, fallbackAttempted, src, alt, maxRetries, defaultFallback])
 
   const handleLoad = () => {
     setLoadingState('loaded')

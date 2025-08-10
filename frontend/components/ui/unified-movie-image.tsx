@@ -127,7 +127,7 @@ export function UnifiedMovieImage({
   // Base image properties
   const imageProps = {
     src: imageSrc,
-    alt,
+    alt: alt || 'Movie poster',
     priority,
     onLoad: handleLoadComplete,
     onError: handleError,
