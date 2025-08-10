@@ -141,3 +141,10 @@ fix_*.py
 clean_*.ps1
 clean_*.sh
 security_audit.*
+fix_git_final.ps1
+
+# Vercel and deployment files
+.vercel/
+*vercel*
+.env.production
+.env.local.example
