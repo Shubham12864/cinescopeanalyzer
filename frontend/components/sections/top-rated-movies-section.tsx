@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation'
 import { useMovieContext } from '@/contexts/movie-context'
 import { movieApi } from '@/lib/api'
 import type { Movie } from '@/types/movie'
-import { MovieImage } from '@/components/ui/movie-image'
+import { UnifiedMovieImage } from '@/components/ui/unified-movie-image'
 
 export function TopRatedMoviesSection() {
   const [topRatedMovies, setTopRatedMovies] = useState<Movie[]>([])
@@ -120,7 +120,7 @@ export function TopRatedMoviesSection() {
             onClick={() => handleMovieClick(movie)}
           >
             <div className="relative aspect-[2/3] rounded-lg overflow-hidden bg-gray-800">
-              <MovieImage
+              <UnifiedMovieImage
                 src={movie.poster}
                 alt={movie.title}
                 fill

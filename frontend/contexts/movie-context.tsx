@@ -1,6 +1,6 @@
 "use client"
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { movieApi } from '@/lib/api'
 import type { Movie, SearchFilters } from '@/types/movie'
 import type { ToastData } from '@/components/ui/toast'

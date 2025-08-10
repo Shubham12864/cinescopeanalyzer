@@ -5,7 +5,7 @@ import { Star, Calendar, Info } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useMovieContext } from "@/contexts/movie-context"
 import { Button } from "@/components/ui/button"
-import { MovieImage } from "@/components/ui/movie-image"
+import { UnifiedMovieImage } from "@/components/ui/unified-movie-image"
 import { formatRating } from "@/lib/api"
 import { type Movie } from "@/types/movie"
 
@@ -91,7 +91,7 @@ export function MovieCard({ movie }: MovieCardProps) {
       onClick={handleCardClick}
     >
       <div className="relative aspect-[3/4] overflow-hidden">
-        <MovieImage
+                      <UnifiedMovieImage
           src={getOptimizedImageUrl(movie.poster)}
           alt={movie.title}
           width={300}

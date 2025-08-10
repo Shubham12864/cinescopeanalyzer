@@ -1,14 +1,68 @@
 "use client"
 
 import { motion } from "framer-motion"
+import dynamic from "next/dynamic"
+import { Suspense, lazy } from "react"
 import { Navigation } from "@/components/navigation/navigation"
 import { Hero } from "@/components/hero/hero"
-import { MovieGrid } from "@/components/movie-cards/movie-grid"
-import { MovieSuggestions } from "@/components/suggestions/movie-suggestions"
-import { PopularMoviesSection } from "@/components/sections/popular-movies-section"
-import { TopRatedMoviesSection } from "@/components/sections/top-rated-movies-section"
-import { RecentMoviesSection } from "@/components/sections/recent-movies-section"
 import { useMovieContext } from "@/contexts/movie-context"
+
+// Lazy load components that are not immediately visible
+const MovieGrid = dynamic(
+  () => import("@/components/movie-cards/movie-grid").then(mod => ({ default: mod.MovieGrid })),
+  { 
+    loading: () => <div className="animate-pulse bg-gray-800 h-96 rounded-lg" />,
+    ssr: false 
+  }
+)
+
+const MovieSuggestions = dynamic(
+  () => import("@/components/suggestions/movie-suggestions").then(mod => ({ default: mod.MovieSuggestions })),
+  { 
+    loading: () => <div className="animate-pulse bg-gray-800 h-64 rounded-lg" />,
+    ssr: false 
+  }
+)
+
+const PopularMoviesSection = dynamic(
+  () => import("@/components/sections/popular-movies-section").then(mod => ({ default: mod.PopularMoviesSection })),
+  { 
+    loading: () => <div className="animate-pulse bg-gray-800 h-96 rounded-lg" />,
+    ssr: false 
+  }
+)
+
+const TopRatedMoviesSection = dynamic(
+  () => import("@/components/sections/top-rated-movies-section").then(mod => ({ default: mod.TopRatedMoviesSection })),
+  { 
+    loading: () => <div className="animate-pulse bg-gray-800 h-96 rounded-lg" />,
+    ssr: false 
+  }
+)
+
+const RecentMoviesSection = dynamic(
+  () => import("@/components/sections/recent-movies-section").then(mod => ({ default: mod.RecentMoviesSection })),
+  { 
+    loading: () => <div className="animate-pulse bg-gray-800 h-96 rounded-lg" />,
+    ssr: false 
+  }
+)
+
+// Loading component for sections
+function SectionLoader() {
+  return (
+    <div className="container mx-auto px-4 py-8">
+      <div className="animate-pulse">
+        <div className="h-8 bg-gray-700 rounded mb-4 w-48"></div>
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="bg-gray-800 h-64 rounded-lg"></div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function HomePage() {
   const { searchQuery, movies } = useMovieContext()
@@ -52,21 +106,31 @@ export default function HomePage() {
             /* Default Home Sections - Only show when NOT searching */
             <div className="container mx-auto px-4 py-8 space-y-12">
               {/* Movie Suggestions - Dynamic suggestions that change every minute */}
-              <MovieSuggestions />
+              <Suspense fallback={<SectionLoader />}>
+                <MovieSuggestions />
+              </Suspense>
 
               {/* Popular Movies - Most popular movies */}
-              <PopularMoviesSection />
+              <Suspense fallback={<SectionLoader />}>
+                <PopularMoviesSection />
+              </Suspense>
 
               {/* Top Rated Movies - Highest rated movies */}
-              <TopRatedMoviesSection />
+              <Suspense fallback={<SectionLoader />}>
+                <TopRatedMoviesSection />
+              </Suspense>
 
               {/* Recent Movies - Latest movies */}
-              <RecentMoviesSection />
+              <Suspense fallback={<SectionLoader />}>
+                <RecentMoviesSection />
+              </Suspense>
               
               {/* All Movies Grid - General movie browsing */}
               <div className="mt-12">
                 <h2 className="text-2xl font-bold text-white mb-6">Browse All Movies</h2>
-                <MovieGrid />
+                <Suspense fallback={<SectionLoader />}>
+                  <MovieGrid />
+                </Suspense>
               </div>
             </div>
           )}

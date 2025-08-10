@@ -6,8 +6,7 @@ import { Play, Info } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useMovieContext } from '@/contexts/movie-context'
 import { movieApi } from '@/lib/api'
-import { MovieImage } from '@/components/ui/movie-image'
-import { SimpleMovieImage } from '@/components/ui/simple-movie-image'
+import { UnifiedMovieImage } from '@/components/ui/unified-movie-image'
 import type { Movie } from '@/types/movie'
 
 const SUGGESTED_TITLES = [
@@ -172,7 +171,7 @@ export function MovieSuggestions() {
             onClick={() => handleSuggestionClick(movie)}
           >
             <div className="relative aspect-[2/3] rounded-lg overflow-hidden bg-gray-900">
-              <SimpleMovieImage
+              <UnifiedMovieImage
                 src={movie.poster || '/placeholder.svg?height=600&width=400'}
                 alt={movie.title}
                 className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
