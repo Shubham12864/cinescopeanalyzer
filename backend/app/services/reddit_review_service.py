@@ -126,11 +126,15 @@ class RedditReviewService:
         try:
             logger.info(f"💬 Getting Reddit reviews for: '{movie_title}' ({year})")
             
-            # Create session with proper cleanup
+            # Create session with proper cleanup and authentication
             timeout = aiohttp.ClientTimeout(total=8)
+            headers = {'User-Agent': self.user_agent}
+            if hasattr(self, 'access_token') and self.access_token:
+                headers['Authorization'] = f"bearer {self.access_token}"
+                
             session = aiohttp.ClientSession(
                 timeout=timeout,
-                headers={'User-Agent': 'CineScopeAnalyzer/2.0'}
+                headers=headers
             )
             
             all_reviews = []
