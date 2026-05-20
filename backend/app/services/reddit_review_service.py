@@ -31,7 +31,7 @@ class RedditReviewService:
         self.user_agent = os.getenv("REDDIT_USER_AGENT", "CineScopeAnalyzer/2.0 (Enhanced Movie Analysis)")
         
         # Reddit endpoints
-        self.reddit_base_url = "https://www.reddit.com"
+        self.reddit_base_url = "https://oauth.reddit.com"
         self.oauth_url = "https://www.reddit.com/api/v1/access_token"
         
         # Movie subreddits to search (reduced for speed)
