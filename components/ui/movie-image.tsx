@@ -40,7 +40,7 @@ export function MovieImage({
       }
       
       // Skip proxy for localhost URLs or already processed URLs
-      if (cleanUrl.includes('localhost') && cleanUrl.includes('/api/')) {
+      if (cleanUrl.includes('/api/movies/image-proxy') || (cleanUrl.includes('localhost') && cleanUrl.includes('/api/'))) {
         return cleanUrl
       }
       
@@ -237,7 +237,6 @@ export function MovieImage({
       }, 150) // Brief skeleton display for smooth UX
     }
   }, [src, isInViewport, priority, retryTimeout, defaultFallback, generateProxyUrl, loadImageWithQueue]) // Add missing dependencies
-  }, [src, defaultFallback, alt, retryTimeout, isInViewport, priority, loadingPriority])
 
   return (
     <div 

@@ -40,7 +40,8 @@ const nextConfig = {
       'm.media-amazon.com',
       'ia.media-imdb.com',
       'via.placeholder.com',
-      'localhost'
+      'localhost',
+      'cinescope-backend-50239412175.us-central1.run.app'
     ],
     remotePatterns: [
       {
@@ -106,6 +107,11 @@ const nextConfig = {
         hostname: 'localhost',
         port: '8000',
         pathname: '/api/movies/images/cached/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'cinescope-backend-50239412175.us-central1.run.app',
+        pathname: '/**',
       }
     ],
     domains: [
@@ -121,20 +127,22 @@ const nextConfig = {
       'cloudinary.com',
       'assets.fanart.tv',
       'fanart.tv',
-      'localhost'
+      'localhost',
+      'cinescope-backend-50239412175.us-central1.run.app'
     ],
     deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
     minimumCacheTTL: 60,
   },
   env: {
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
+    NEXT_PUBLIC_API_URL: (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').trim(),
   },
   async rewrites() {
+    const apiUrl = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').trim()
     return [
       {
         source: '/api/:path*',
-        destination: `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/:path*`,
+        destination: `${apiUrl}/api/:path*`,
       },
     ];
   },

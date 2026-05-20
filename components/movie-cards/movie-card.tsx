@@ -11,9 +11,10 @@ import { type Movie } from "@/types/movie"
 
 interface MovieCardProps {
   movie: Movie
+  priority?: boolean
 }
 
-export function MovieCard({ movie }: MovieCardProps) {
+export function MovieCard({ movie, priority = false }: MovieCardProps) {
   const router = useRouter()
   const { setSelectedMovie, analyzeMovie, isBackendConnected } = useMovieContext()
   
@@ -46,6 +47,11 @@ export function MovieCard({ movie }: MovieCardProps) {
   const getOptimizedImageUrl = (posterUrl: string | null | undefined): string => {
     if (!posterUrl || posterUrl === 'N/A') {
       return `https://via.placeholder.com/300x450/1a1a1a/ffffff?text=${encodeURIComponent(movie.title || 'Movie')}`
+    }
+    
+    // If it's already a proxied URL, return it directly
+    if (posterUrl.includes('/api/movies/image-proxy')) {
+      return posterUrl
     }
     
     // Use backend image proxy for all external images
@@ -96,7 +102,7 @@ export function MovieCard({ movie }: MovieCardProps) {
           alt={movie.title}
           width={300}
           height={450}
-          priority={false}
+          priority={priority}
           className="object-cover transition-transform duration-300 group-hover:scale-105"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200" />

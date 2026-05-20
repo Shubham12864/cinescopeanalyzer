@@ -34,7 +34,7 @@ export function NetflixHeroBanner({ featuredMovie }: NetflixHeroBannerProps) {
       title: "Avengers: Endgame",
       description:
         "After the devastating events of Infinity War, the Avengers assemble once more to reverse Thanos' actions and restore balance to the universe.",
-      backdrop: "http://localhost:8000/api/movies/image-proxy?url=https%3A//m.media-amazon.com/images/M/MV5BMTc5MDE2ODcwNV5BMl5BanBnXkFtZTgwMzI2NzQ2NzM@._V1_SX300.jpg",
+      backdrop: "https://m.media-amazon.com/images/M/MV5BMTc5MDE2ODcwNV5BMl5BanBnXkFtZTgwMzI2NzQ2NzM@._V1_SX300.jpg",
       rating: 8.4,
       year: 2019,
       genre: ["Action", "Adventure", "Drama"],
@@ -44,7 +44,7 @@ export function NetflixHeroBanner({ featuredMovie }: NetflixHeroBannerProps) {
       title: "The Dark Knight",
       description:
         "Batman raises the stakes in his war on crime with the help of Lieutenant Jim Gordon and District Attorney Harvey Dent.",
-      backdrop: "http://localhost:8000/api/movies/image-proxy?url=https%3A//m.media-amazon.com/images/M/MV5BMTMxNTMwODM0NF5BMl5BanBnXkFtZTcwODAyMTk2Mw@@._V1_SX300.jpg",
+      backdrop: "https://m.media-amazon.com/images/M/MV5BMTMxNTMwODM0NF5BMl5BanBnXkFtZTcwODAyMTk2Mw@@._V1_SX300.jpg",
       rating: 9.0,
       year: 2008,
       genre: ["Action", "Crime", "Drama"],
@@ -54,7 +54,7 @@ export function NetflixHeroBanner({ featuredMovie }: NetflixHeroBannerProps) {
       title: "Inception",
       description:
         "A thief who steals corporate secrets through dream-sharing technology is given the inverse task of planting an idea into the mind of a C.E.O.",
-      backdrop: "http://localhost:8000/api/movies/image-proxy?url=https%3A//m.media-amazon.com/images/M/MV5BMjAxMzY3NjcxNF5BMl5BanBnXkFtZTcwNTI5OTM0Mw@@._V1_SX300.jpg",
+      backdrop: "https://m.media-amazon.com/images/M/MV5BMjAxMzY3NjcxNF5BMl5BanBnXkFtZTcwNTI5OTM0Mw@@._V1_SX300.jpg",
       rating: 8.8,
       year: 2010,
       genre: ["Action", "Sci-Fi", "Thriller"],
@@ -104,7 +104,12 @@ export function NetflixHeroBanner({ featuredMovie }: NetflixHeroBannerProps) {
     } catch (error) {
       console.error('❌ Error fetching featured movies from backend:', error)
       console.log('📺 Using fallback featured movies')
-      setMovies(fallbackMovies)
+      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const mappedFallbacks = fallbackMovies.map(movie => ({
+        ...movie,
+        backdrop: `${API_BASE_URL}/api/movies/image-proxy?url=${encodeURIComponent(movie.backdrop)}`
+      }))
+      setMovies(mappedFallbacks)
     } finally {
       setIsLoading(false)
     }

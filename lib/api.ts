@@ -4,14 +4,11 @@ import { queueApiCall, queuePriorityRequest } from './request-queue'
 
 // Robust API URL detection with fallbacks
 const getApiBaseUrl = () => {
-  // Check environment variable first
-  if (typeof window !== 'undefined') {
-    // Client-side: check for runtime environment
-    const envUrl = process.env.NEXT_PUBLIC_API_URL
-    if (envUrl) {
-      console.log('🔗 Using API URL from environment:', envUrl)
-      return envUrl
-    }
+  // Check environment variable first (available at compile time and runtime)
+  const envUrl = process.env.NEXT_PUBLIC_API_URL?.trim()
+  if (envUrl) {
+    console.log('🔗 Using API URL from environment:', envUrl)
+    return envUrl
   }
   
   // Fallback URLs based on current environment

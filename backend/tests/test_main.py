@@ -27,6 +27,12 @@ def test_api_health_endpoint(client):
 
 def test_cors_headers(client):
     """Test CORS headers are present"""
-    response = client.options('/health')
+    response = client.options(
+        '/health',
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "GET"
+        }
+    )
     assert response.status_code == 200
-    # CORS headers should be present due to middleware
+    assert "access-control-allow-origin" in response.headers

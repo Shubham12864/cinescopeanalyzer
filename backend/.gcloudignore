@@ -1,0 +1,26 @@
+# .gcloudignore
+.git
+.gitignore
+.gcloudignore
+
+# Python virtual envs
+venv/
+.venv/
+env/
+.env
+
+# Python cache & build directories
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.poetry/
+.mypy_cache/
+
+# Local cache & data
+cache/
+logs/
+*.db
+*.json
+tests/

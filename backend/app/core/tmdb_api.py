@@ -3,11 +3,12 @@ import httpx
 import asyncio
 import logging
 from typing import List, Optional, Dict, Any
+from .config import settings
 
 class TMDBApi:
     def __init__(self, api_key: str = None):
-        # Accept API key parameter or get from environment
-        self.api_key = api_key or os.getenv("TMDB_API_KEY", "demo_key_12345")
+        # Accept API key parameter or get from centralized settings
+        self.api_key = api_key or settings.TMDB_API_KEY
         self.base_url = "https://api.themoviedb.org/3"
         self.image_base_url = "https://image.tmdb.org/t/p/w500"
         self.logger = logging.getLogger(__name__)
@@ -159,7 +160,7 @@ class TMDBApi:
             self.logger.error(f"❌ TMDB trending API request failed: {e}")
             return self._get_demo_trending_data()
 
-    async def get_popular_movies(self) -> Dict[str, Any]:
+    async def get_popular_movies(self, limit: int = 20) -> Dict[str, Any]:
         """Get popular movies from TMDB API"""
         if self.api_key in ["demo_key_12345", "demo_key", "", None]:
             self.logger.warning("⚠️ Using demo TMDB key for popular movies")
@@ -178,6 +179,7 @@ class TMDBApi:
                 
                 if response.status_code == 200:
                     data = response.json()
+                    # Limit results inside dict if needed, or return all
                     self.logger.info(f"✅ TMDB popular API returned {len(data.get('results', []))} movies")
                     return data
                 else:
@@ -188,6 +190,71 @@ class TMDBApi:
             self.logger.error(f"❌ TMDB popular API request failed: {e}")
             return self._get_demo_popular_data()
 
+    async def get_movie_details(self, movie_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Fetch complete movie details from TMDB.
+        Accepts either TMDB ID (numeric or 'tmdb_12345') or IMDb ID (starts with 'tt').
+        Appends credits, videos, and external_ids to the response.
+        """
+        # Check for real API key
+        if self.api_key in ["demo_key_12345", "demo_key", "", None]:
+            self.logger.warning("⚠️ Using demo key for TMDB movie details")
+            return self._get_demo_details(movie_id)
+            
+        try:
+            # Clean up the ID
+            clean_id = movie_id
+            if isinstance(clean_id, str):
+                if clean_id.startswith("tmdb_"):
+                    clean_id = clean_id.replace("tmdb_", "")
+                
+            # If ID starts with 'tt', resolve it to TMDB ID first
+            is_imdb = isinstance(clean_id, str) and clean_id.startswith("tt")
+            
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                if is_imdb:
+                    # Resolve IMDb ID to TMDB ID using /find
+                    response = await client.get(
+                        f"{self.base_url}/find/{clean_id}",
+                        params={
+                            "api_key": self.api_key,
+                            "external_source": "imdb_id",
+                            "language": "en-US"
+                        }
+                    )
+                    if response.status_code == 200:
+                        find_data = response.json()
+                        movie_results = find_data.get("movie_results", [])
+                        if movie_results:
+                            clean_id = movie_results[0]["id"]
+                        else:
+                            self.logger.warning(f"⚠️ Could not find TMDB movie for IMDb ID {clean_id}")
+                            return None
+                    else:
+                        self.logger.error(f"❌ TMDB find query failed: {response.status_code}")
+                        return None
+                
+                # Fetch complete details using TMDB ID
+                response = await client.get(
+                    f"{self.base_url}/movie/{clean_id}",
+                    params={
+                        "api_key": self.api_key,
+                        "append_to_response": "credits,videos,external_ids",
+                        "language": "en-US"
+                    }
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    return self._format_tmdb_details(data)
+                else:
+                    self.logger.error(f"❌ TMDB movie details query failed: {response.status_code} - ID: {clean_id}")
+                    return None
+                    
+        except Exception as e:
+            self.logger.error(f"❌ Error getting TMDB movie details for {movie_id}: {e}")
+            return None
+
     def _format_tmdb_movie(self, item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Format TMDB data to our movie format"""
         try:
@@ -196,19 +263,68 @@ class TMDBApi:
                 'title': item.get('title', 'Unknown'),
                 'year': self._parse_year(item.get('release_date', '')),
                 'plot': item.get('overview', 'No plot available'),
-                'rating': round(item.get('vote_average', 0), 1),
+                'rating': round(item.get('vote_average', 0.0), 1),
                 'genre': self._get_genre_names(item.get('genre_ids', [])),
-                'director': 'Unknown',  # Would need separate API call
-                'cast': [],  # Would need separate API call
+                'director': 'Unknown',  # Filled in details call
+                'cast': [],  # Filled in details call
                 'poster': self._get_poster_url(item.get('poster_path')),
-                'runtime': 0,  # Would need separate API call
-                'imdbId': '',  # Would need separate API call
+                'runtime': 0,
+                'imdbId': '',
                 'reviews': [],
-                'source': 'tmdb_live'  # Mark as real data
+                'source': 'tmdb_live'
             }
         except Exception as e:
             self.logger.error(f"Error formatting TMDB movie: {e}")
             return None
+
+    def _format_tmdb_details(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Format raw TMDB details response into CineScope movie format"""
+        # Extract director from crew
+        credits = data.get("credits", {})
+        crew = credits.get("crew", [])
+        director = "Unknown"
+        for member in crew:
+            if member.get("job") == "Director":
+                director = member.get("name", "Unknown")
+                break
+                
+        # Extract top 5 cast members
+        cast_members = credits.get("cast", [])
+        cast = [member.get("name") for member in cast_members[:5] if member.get("name")]
+        
+        # Extract genre names
+        genres = [g.get("name") for g in data.get("genres", []) if g.get("name")]
+        
+        # Extract trailer URL (YouTube key)
+        videos = data.get("videos", {}).get("results", [])
+        trailer_key = ""
+        for video in videos:
+            if video.get("site") == "YouTube" and video.get("type") == "Trailer":
+                trailer_key = video.get("key", "")
+                break
+        # Fallback to first video if no trailer
+        if not trailer_key and videos:
+            trailer_key = videos[0].get("key", "")
+            
+        imdb_id = data.get("external_ids", {}).get("imdb_id") or data.get("imdb_id") or ""
+        
+        return {
+            'id': f"tmdb_{data.get('id')}",
+            'imdbId': imdb_id,
+            'title': data.get('title', 'Unknown'),
+            'year': self._parse_year(data.get('release_date', '')),
+            'plot': data.get('overview', 'No plot available'),
+            'rating': round(data.get('vote_average', 0.0), 1),
+            'genre': genres,
+            'director': director,
+            'cast': cast,
+            'poster': self._get_poster_url(data.get('poster_path')),
+            'backdrop': self._get_backdrop_url(data.get('backdrop_path')),
+            'runtime': data.get('runtime', 0),
+            'trailer': f"https://www.youtube.com/watch?v={trailer_key}" if trailer_key else "",
+            'reviews': [],
+            'source': 'tmdb_live'
+        }
 
     def _parse_year(self, date_str: str) -> int:
         """Parse year from release date"""
@@ -222,6 +338,12 @@ class TMDBApi:
         if poster_path:
             return f"{self.image_base_url}{poster_path}"
         return '/placeholder.svg?height=450&width=300'
+
+    def _get_backdrop_url(self, backdrop_path: Optional[str]) -> str:
+        """Get full backdrop URL"""
+        if backdrop_path:
+            return f"https://image.tmdb.org/t/p/original{backdrop_path}"
+        return ""
 
     def _get_genre_names(self, genre_ids: List[int]) -> List[str]:
         """Convert TMDB genre IDs to genre names"""
@@ -458,6 +580,35 @@ class TMDBApi:
                 }
             ]
         }
+
+    def _get_demo_details(self, movie_id: str) -> Dict[str, Any]:
+        """Get fallback details from demo data pool"""
+        demo_movies = self._get_demo_trending(10) + self._get_demo_popular(10)
+        for movie in demo_movies:
+            if movie['id'] == movie_id or movie.get('imdbId') == movie_id:
+                movie_copy = movie.copy()
+                movie_copy['backdrop'] = "https://image.tmdb.org/t/p/original/iQFcwSGbZXMkeyKrxbPnwnRo5fl.jpg"
+                movie_copy['trailer'] = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+                return movie_copy
+                
+        return {
+            'id': movie_id,
+            'imdbId': 'tt0133093',
+            'title': 'The Matrix',
+            'year': 1999,
+            'plot': 'A computer programmer discovers reality is a simulation.',
+            'rating': 8.7,
+            'genre': ['Action', 'Science Fiction'],
+            'director': 'The Wachowskis',
+            'cast': ['Keanu Reeves', 'Laurence Fishburne'],
+            'poster': 'https://image.tmdb.org/t/p/w500/lh4aVh2hYS85rSM3gBaybb17YfW.jpg',
+            'backdrop': 'https://image.tmdb.org/t/p/original/5mzCTwY4tZ764Z55nxJv0t15155.jpg',
+            'runtime': 136,
+            'trailer': 'https://www.youtube.com/watch?v=vKQi3bBA1y8',
+            'reviews': [],
+            'source': 'tmdb_demo_details'
+        }
+
 # Legacy class for compatibility
 class TMDbAPI(TMDBApi):
     pass

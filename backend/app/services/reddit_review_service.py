@@ -194,7 +194,61 @@ class RedditReviewService:
         except Exception as e:
             logger.warning(f"⚠️ Subreddit search failed for r/{subreddit}: {e}")
             return []
-    
+            
+    def _process_reddit_data(self, data: Dict[str, Any], query: str) -> List[Dict[str, Any]]:
+        """Process raw Reddit search JSON response"""
+        processed_reviews = []
+        import time
+        try:
+            if not data or 'data' not in data or 'children' not in data['data']:
+                return []
+                
+            for child in data['data']['children']:
+                post_data = child.get('data', {})
+                title = post_data.get('title', '')
+                selftext = post_data.get('selftext', '')
+                author = post_data.get('author', 'Unknown')
+                score = post_data.get('score', 0)
+                num_comments = post_data.get('num_comments', 0)
+                permalink = post_data.get('permalink', '')
+                created_utc = post_data.get('created_utc', time.time())
+                
+                # Format time
+                try:
+                    date_str = datetime.fromtimestamp(created_utc).strftime('%Y-%m-%d')
+                except:
+                    date_str = datetime.now().strftime('%Y-%m-%d')
+                
+                # Determine mock sentiment for individual review for fallback UI
+                text_to_analyze = (title + " " + selftext).lower()
+                positive_words = ['great', 'awesome', 'good', 'love', 'amazing', 'masterpiece', 'excellent', 'best', 'cool', 'beautiful']
+                negative_words = ['bad', 'worst', 'waste', 'boring', 'awful', 'terrible', 'hate', 'disappointed', 'poor', 'slow']
+                
+                pos_count = sum(1 for w in positive_words if w in text_to_analyze)
+                neg_count = sum(1 for w in negative_words if w in text_to_analyze)
+                
+                if pos_count > neg_count:
+                    sentiment = 'positive'
+                elif neg_count > pos_count:
+                    sentiment = 'negative'
+                else:
+                    sentiment = 'neutral'
+                
+                processed_reviews.append({
+                    'title': title,
+                    'content': selftext or title,
+                    'author': author,
+                    'score': score,
+                    'num_comments': num_comments,
+                    'url': f"https://reddit.com{permalink}",
+                    'date': date_str,
+                    'sentiment': sentiment,
+                    'comments': []
+                })
+        except Exception as e:
+            logger.error(f"Error processing reddit search data: {e}")
+        return processed_reviews
+
     async def get_trending_movie_discussions(self, limit: int = 20) -> List[Dict[str, Any]]:
         """Get trending movie discussions from Reddit"""
         try:

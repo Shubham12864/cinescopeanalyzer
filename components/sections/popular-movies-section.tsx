@@ -142,11 +142,12 @@ export function PopularMoviesSection() {
                 src={(() => {
                   // Ensure proper image proxy handling for popular movies
                   if (movie.poster && movie.poster !== "N/A") {
-                    if (movie.poster.includes('/api/movies/image-proxy') || movie.poster.startsWith('http://localhost:8000/api/movies/image-proxy')) {
+                    const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+                    if (movie.poster.includes('/api/movies/image-proxy')) {
                       return movie.poster
                     }
-                    if (movie.poster.includes('m.media-amazon.com')) {
-                      return `http://localhost:8000/api/movies/image-proxy?url=${encodeURIComponent(movie.poster)}`
+                    if (movie.poster.includes('m.media-amazon.com') || movie.poster.startsWith('http')) {
+                      return `${apiBase}/api/movies/image-proxy?url=${encodeURIComponent(movie.poster)}`
                     }
                     return movie.poster
                   }

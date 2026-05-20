@@ -95,7 +95,7 @@ export function MovieGrid() {
             backdrop: featured.poster && featured.poster.includes('/api/movies/image-proxy') 
               ? featured.poster 
               : featured.poster 
-                ? `http://localhost:8000/api/movies/image-proxy?url=${encodeURIComponent(featured.poster)}`
+                ? `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/movies/image-proxy?url=${encodeURIComponent(featured.poster)}`
                 : "https://via.placeholder.com/1920x1080/1a1a1a/ffffff?text=" + encodeURIComponent(featured.title),
             rating: featured.rating || 8.0,
             year: featured.year || 2023,
